@@ -13,6 +13,9 @@ from app.core.security import (
     verify_password,
 )
 
+USER_ID = UUID("12345678-1234-4234-8234-123456789abc")
+OTHER_USER_ID = UUID("87654321-4321-4321-8321-cba987654321")
+
 
 @pytest.fixture(autouse=True)
 def security_settings(monkeypatch):
@@ -42,11 +45,12 @@ def test_verify_password_checks_password(password, expected):
 
 def test_create_access_token_contains_required_claims(security_settings):
     before = int(datetime.now(UTC).timestamp())
-    token = create_access_token(42)
+    token = create_access_token(USER_ID)
     after = int(datetime.now(UTC).timestamp())
     claims = jwt.decode(token, security_settings.jwt_secret, algorithms=["HS256"])
 
-    assert claims["sub"] == "42"
+    assert claims["sub"] == str(USER_ID)
+    assert UUID(claims["sub"]) == USER_ID
     assert str(UUID(claims["jti"])) == claims["jti"]
     assert before <= claims["iat"] <= after
     assert claims["exp"] - claims["iat"] == security_settings.jwt_expire_minutes * 60
@@ -54,8 +58,8 @@ def test_create_access_token_contains_required_claims(security_settings):
 
 
 def test_create_access_token_assigns_unique_jti():
-    first = decode_access_token(create_access_token(42))
-    second = decode_access_token(create_access_token(42))
+    first = decode_access_token(create_access_token(USER_ID))
+    second = decode_access_token(create_access_token(USER_ID))
 
     assert first["jti"] != second["jti"]
 
@@ -64,7 +68,7 @@ def test_decode_access_token_rejects_expired_token(security_settings):
     now = datetime.now(UTC)
     token = jwt.encode(
         {
-            "sub": "42",
+            "sub": str(USER_ID),
             "jti": "test-id",
             "iat": now - timedelta(hours=2),
             "exp": now - timedelta(hours=1),
@@ -78,7 +82,7 @@ def test_decode_access_token_rejects_expired_token(security_settings):
 
 
 def test_decode_access_token_rejects_wrong_secret(monkeypatch):
-    token = create_access_token(42)
+    token = create_access_token(USER_ID)
     monkeypatch.setenv("JWT_SECRET", "outro-segredo-de-testes-000000000000000")
     get_settings.cache_clear()
 
@@ -87,10 +91,10 @@ def test_decode_access_token_rejects_wrong_secret(monkeypatch):
 
 
 def test_decode_access_token_rejects_tampered_payload(security_settings):
-    token = create_access_token(42)
+    token = create_access_token(USER_ID)
     header, _, signature = token.split(".")
     forged_payload = jwt.encode(
-        {"sub": "999", "jti": "forged", "iat": 0, "exp": 9999999999},
+        {"sub": str(OTHER_USER_ID), "jti": "forged", "iat": 0, "exp": 9999999999},
         security_settings.jwt_secret,
         algorithm="HS256",
     ).split(".")[1]
@@ -107,7 +111,7 @@ def test_decode_access_token_rejects_malformed_token(token):
 
 @pytest.mark.parametrize("missing_claim", ["sub", "jti", "iat", "exp"])
 def test_decode_access_token_rejects_missing_claim(missing_claim, security_settings):
-    claims = decode_access_token(create_access_token(42))
+    claims = decode_access_token(create_access_token(USER_ID))
     del claims[missing_claim]
     token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
 
@@ -117,7 +121,7 @@ def test_decode_access_token_rejects_missing_claim(missing_claim, security_setti
 
 @pytest.mark.parametrize("algorithm", ["HS384", "none"])
 def test_decode_access_token_rejects_unexpected_algorithm(algorithm, security_settings):
-    claims = decode_access_token(create_access_token(42))
+    claims = decode_access_token(create_access_token(USER_ID))
     key = security_settings.jwt_secret if algorithm != "none" else ""
     token = jwt.encode(claims, key, algorithm=algorithm)
 
@@ -139,7 +143,7 @@ def test_decode_access_token_rejects_unexpected_algorithm(algorithm, security_se
     ],
 )
 def test_decode_access_token_rejects_invalid_claim(claim, value, security_settings):
-    claims = decode_access_token(create_access_token(42))
+    claims = decode_access_token(create_access_token(USER_ID))
     claims[claim] = value
     token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
 
@@ -148,7 +152,7 @@ def test_decode_access_token_rejects_invalid_claim(claim, value, security_settin
 
 
 def test_decode_access_token_rejects_future_issued_at(security_settings):
-    claims = decode_access_token(create_access_token(42))
+    claims = decode_access_token(create_access_token(USER_ID))
     claims["iat"] = int((datetime.now(UTC) + timedelta(minutes=1)).timestamp())
     token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
 

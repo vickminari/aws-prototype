@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import jwt
 from pwdlib import PasswordHash
@@ -24,8 +24,8 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return _password_hash.verify(password, hashed_password)
 
 
-def create_access_token(user_id: int) -> str:
-    """Assina um JWT com identidade, ID único e validade configurada."""
+def create_access_token(user_id: UUID) -> str:
+    """Assina um JWT com o UUID do usuário em sub, ID único e validade configurada."""
     settings = get_settings()
     now = datetime.now(UTC)
     return jwt.encode(
