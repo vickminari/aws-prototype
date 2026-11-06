@@ -100,6 +100,7 @@ Exemplo: `GET /api/users/me`.
    ```python
    router = APIRouter(prefix="/users", tags=["users"])
 
+
    @router.get(
        "/me",
        response_model=UserRead,
