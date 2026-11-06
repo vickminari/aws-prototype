@@ -11,6 +11,7 @@ Aplicação web com cadastro de usuários, login/logout com JWT, dashboard e edi
 | Documento | Conteúdo |
 |---|---|
 | [Como contribuir](CONTRIBUTING.md) | Fluxo de git, commits, TDD, checklist do PR |
+| [Autenticação no navegador](docs/DECISAO_AUTENTICACAO.md) | Decisão de JWT em cookie HttpOnly e impactos nas issues |
 | [Issues](https://github.com/vickminari/aws-prototype/issues) | Tarefas, responsáveis e cronograma |
 | [Reports da AWS](docs/aws/) | Como cada recurso da AWS foi criado e configurado |
 

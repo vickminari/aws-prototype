@@ -137,6 +137,12 @@ Essas funções independem do transporte: cookie e header são definidos na cama
 HTTP. A checagem de usuário ativo e de revogação por `jti` pertence à issue #9;
 decodificar um token não basta para autorizar uma requisição.
 
+O transporte escolhido para o navegador é **JWT em cookie HttpOnly**.
+O [registro da decisão](../docs/DECISAO_AUTENTICACAO.md) define o contrato futuro
+de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
+A integração HTTP será implementada na #9; os handlers descritos acima ainda
+refletem o esqueleto atual.
+
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com
 `STORAGE_BACKEND=s3` sem `S3_BUCKET`.
