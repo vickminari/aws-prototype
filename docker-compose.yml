@@ -1,0 +1,39 @@
+# Desenvolvimento local (ARQ §9.1). Produção usa docker-compose.prod.yml (issue #23).
+#   docker compose up --build   → API em http://localhost:8000/api/docs
+services:
+  db:
+    image: postgres:16
+    environment:
+      # Credenciais só do banco local de desenvolvimento
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://app:app@db:5432/app
+    ports:
+      - "8000:8000"
+    volumes:
+      # Hot reload: o código local substitui o da imagem
+      - ./backend/app:/app/app
+    command: ["--reload"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

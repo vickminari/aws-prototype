@@ -1,0 +1,38 @@
+"""Dependências injetadas nas rotas (`Depends`).
+
+`get_current_user` e `get_storage` são **stubs** (ARQ §1.3): definem o contrato para
+quem implementa perfil e avatar sem esperar o login. Nos testes, substitua-os com
+`app.dependency_overrides[get_current_user] = lambda: usuario_de_fixture`.
+
+- `get_current_user` real: issue #9 (login/logout).
+- `get_storage` real: issue #11 (storage e avatar).
+- `get_db`: issue #5 (banco).
+"""
+
+from typing import NoReturn
+
+from fastapi import Depends
+from fastapi.security import OAuth2PasswordBearer
+
+from app.core.exceptions import InvalidTokenError
+
+# auto_error=False: a ausência de token também vira InvalidTokenError (formato padrão de erro)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def get_current_user(token: str | None = Depends(oauth2_scheme)) -> NoReturn:
+    """Stub: rejeita qualquer requisição com 401 até a issue #9 implementar o login.
+
+    Raises:
+        InvalidTokenError: sempre.
+    """
+    raise InvalidTokenError()
+
+
+def get_storage() -> NoReturn:
+    """Stub: o `StorageService` (local/S3) é implementado na issue #11.
+
+    Raises:
+        NotImplementedError: sempre; use `dependency_overrides` nos testes.
+    """
+    raise NotImplementedError("StorageService ainda não implementado (issue #11)")
