@@ -1,0 +1,104 @@
+"""Ponto de entrada da API: cria o app, registra routers e handlers de erro."""
+
+import logging
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from app.controllers import health_controller
+from app.core.config import Settings, get_settings
+from app.core.exceptions import (
+    DomainError,
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    InvalidImageError,
+    InvalidTokenError,
+    NotFoundError,
+    UsernameAlreadyExistsError,
+    WrongPasswordError,
+)
+from app.schemas.error import ErrorRead
+
+API_PREFIX = "/api"
+
+# Exceção de domínio → status HTTP (ARQ §5.2). Subclasses herdam o status da classe-mãe;
+# exceções fora do mapa viram 400.
+DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
+    EmailAlreadyExistsError: 409,
+    UsernameAlreadyExistsError: 409,
+    InvalidCredentialsError: 401,
+    InvalidTokenError: 401,
+    WrongPasswordError: 400,
+    InvalidImageError: 422,
+    NotFoundError: 404,
+}
+DEFAULT_DOMAIN_ERROR_STATUS = 400
+
+logger = logging.getLogger(__name__)
+
+
+def _status_for(exc: DomainError) -> int:
+    for cls in type(exc).__mro__:
+        if cls in DOMAIN_ERROR_STATUS:
+            return DOMAIN_ERROR_STATUS[cls]
+    return DEFAULT_DOMAIN_ERROR_STATUS
+
+
+async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
+    status_code = _status_for(exc)
+    # RFC 6750: respostas 401 indicam o esquema de autenticação esperado
+    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+    return JSONResponse(
+        status_code=status_code,
+        content={"detail": exc.message, "code": exc.code},
+        headers=headers,
+    )
+
+
+async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    # A mensagem original vai só para o log: pode conter dados internos
+    logger.exception("Erro não tratado em %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno do servidor", "code": "INTERNAL_ERROR"},
+    )
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    """Monta a aplicação FastAPI.
+
+    Args:
+        settings: configuração a usar; se omitida, lê das variáveis de ambiente.
+            Os testes passam um `Settings` próprio para variar CORS, ambiente etc.
+    """
+    settings = settings or get_settings()
+    logging.basicConfig(level=settings.log_level.upper())
+
+    app = FastAPI(
+        title="Protótipo 1 — API",
+        description="Cadastro, login com JWT e perfil de usuário (TES/UFPI).",
+        version="0.1.0",
+        docs_url=f"{API_PREFIX}/docs",
+        openapi_url=f"{API_PREFIX}/openapi.json",
+        redoc_url=None,
+        responses={500: {"model": ErrorRead, "description": "Erro inesperado no servidor"}},
+    )
+
+    if settings.cors_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    app.add_exception_handler(DomainError, domain_error_handler)
+    app.add_exception_handler(Exception, unexpected_error_handler)
+
+    app.include_router(health_controller.router, prefix=API_PREFIX)
+    return app
+
+
+app = create_app()
