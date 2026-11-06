@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Annotated, Literal, Self
 
-from pydantic import field_validator, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Valor só para desenvolvimento; em produção o segredo vem do Parameter Store.
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     environment: Literal["dev", "test", "prod"] = "dev"
     database_url: str = "postgresql+psycopg://app:app@localhost:5432/app"
     jwt_secret: str = DEV_JWT_SECRET
-    jwt_expire_minutes: int = 60
+    jwt_expire_minutes: int = Field(default=60, gt=0)
     storage_backend: Literal["local", "s3"] = "local"
     s3_bucket: str | None = None
     aws_region: str = "us-east-2"

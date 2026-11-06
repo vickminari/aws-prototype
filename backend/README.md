@@ -120,6 +120,23 @@ Exemplo: `GET /api/users/me`.
 
 ## Variáveis de ambiente
 
+### Segurança (issue #7)
+
+`app/core/security.py` fornece `hash_password`, `verify_password`,
+`create_access_token(user_id)` e `decode_access_token(token)`, sem importar FastAPI.
+As senhas usam Argon2id com salt aleatório. Os JWTs usam HS256 e exigem `sub`,
+`jti`, `iat` e `exp`; assinatura, algoritmo e validade são verificados antes de
+retornar os dados. Token inválido gera a exceção de domínio `InvalidTokenError`.
+
+`JWT_EXPIRE_MINUTES` deve ser positivo (padrão atual: 60 minutos).
+Em produção, `JWT_SECRET` deve ser gerado aleatoriamente, ter ao menos 32 bytes
+de entropia e ser exclusivo desta aplicação. Não reutilize o segredo de desenvolvimento.
+O JWT é assinado, não criptografado: não inclua senhas ou outros segredos no payload.
+
+Essas funções independem do transporte: cookie e header são definidos na camada
+HTTP. A checagem de usuário ativo e de revogação por `jti` pertence à issue #9;
+decodificar um token não basta para autorizar uma requisição.
+
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com
 `STORAGE_BACKEND=s3` sem `S3_BUCKET`.

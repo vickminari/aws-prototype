@@ -16,7 +16,7 @@ from app.core.security import (
 
 @pytest.fixture(autouse=True)
 def security_settings(monkeypatch):
-    monkeypatch.setenv("JWT_SECRET", "segredo-exclusivo-dos-testes-000000000000")
+    monkeypatch.setenv("JWT_SECRET", "segredo-exclusivo-dos-testes-0000000000000000000000000000")
     monkeypatch.setenv("JWT_EXPIRE_MINUTES", "15")
     get_settings.cache_clear()
     yield get_settings()
@@ -120,6 +120,37 @@ def test_decode_access_token_rejects_unexpected_algorithm(algorithm, security_se
     claims = decode_access_token(create_access_token(42))
     key = security_settings.jwt_secret if algorithm != "none" else ""
     token = jwt.encode(claims, key, algorithm=algorithm)
+
+    with pytest.raises(InvalidTokenError):
+        decode_access_token(token)
+
+
+@pytest.mark.parametrize(
+    "claim, value",
+    [
+        ("sub", ""),
+        ("jti", ""),
+        ("sub", 42),
+        ("jti", 42),
+        ("iat", "invalido"),
+        ("exp", "invalido"),
+        ("iat", []),
+        ("exp", {}),
+    ],
+)
+def test_decode_access_token_rejects_invalid_claim(claim, value, security_settings):
+    claims = decode_access_token(create_access_token(42))
+    claims[claim] = value
+    token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
+
+    with pytest.raises(InvalidTokenError):
+        decode_access_token(token)
+
+
+def test_decode_access_token_rejects_future_issued_at(security_settings):
+    claims = decode_access_token(create_access_token(42))
+    claims["iat"] = int((datetime.now(UTC) + timedelta(minutes=1)).timestamp())
+    token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)
