@@ -4,6 +4,12 @@ from pydantic import ValidationError
 from app.core.config import Settings
 
 
+@pytest.mark.parametrize("minutes", [0, -1])
+def test_settings_rejects_non_positive_token_lifetime(minutes):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, jwt_expire_minutes=minutes)
+
+
 def test_settings_without_env_uses_dev_defaults(monkeypatch):
     for name in ("ENVIRONMENT", "STORAGE_BACKEND", "AWS_REGION", "JWT_EXPIRE_MINUTES"):
         monkeypatch.delenv(name, raising=False)
