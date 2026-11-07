@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from app.controllers import health_controller
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
+    DatabaseUnavailableError,
     DomainError,
     EmailAlreadyExistsError,
     InvalidCredentialsError,
@@ -32,6 +33,7 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     WrongPasswordError: 400,
     InvalidImageError: 422,
     NotFoundError: 404,
+    DatabaseUnavailableError: 503,
 }
 DEFAULT_DOMAIN_ERROR_STATUS = 400
 
