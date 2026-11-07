@@ -4,8 +4,7 @@ from uuid import UUID
 from sqlalchemy import ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base, UTCDateTime
-from app.models.user import utcnow
+from app.core.database import Base, UTCDateTime, utcnow
 
 
 class RevokedToken(Base):

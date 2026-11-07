@@ -1,15 +1,10 @@
-from datetime import UTC, datetime
+from datetime import datetime
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.core.database import Base, UTCDateTime
-
-
-def utcnow() -> datetime:
-    """Momento atual em UTC (ARQ §5.9: datas sempre em UTC no banco)."""
-    return datetime.now(UTC)
+from app.core.database import Base, UTCDateTime, utcnow
 
 
 class User(Base):

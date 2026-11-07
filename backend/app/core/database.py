@@ -18,6 +18,11 @@ NAMING_CONVENTION = {
 }
 
 
+def utcnow() -> datetime:
+    """Momento atual em UTC (ARQ §5.9: datas sempre em UTC no banco). Default das colunas."""
+    return datetime.now(UTC)
+
+
 class UTCDateTime(TypeDecorator[datetime]):
     """`DateTime(timezone=True)` que sempre devolve datas com fuso UTC.
 
@@ -45,6 +50,9 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
+CONNECT_TIMEOUT_SECONDS = 5
+
+
 def _connect_args(database_url: str) -> dict[str, int]:
     """Limita a espera por conexão no PostgreSQL: com o RDS inacessível (SG, rede),
     o health check responde 503 em segundos em vez de travar a requisição."""
@@ -52,8 +60,6 @@ def _connect_args(database_url: str) -> dict[str, int]:
         return {"connect_timeout": CONNECT_TIMEOUT_SECONDS}
     return {}
 
-
-CONNECT_TIMEOUT_SECONDS = 5
 
 # A conexão só é aberta no primeiro uso; pool_pre_ping descarta conexões que o RDS encerrou.
 _database_url = get_settings().database_url
