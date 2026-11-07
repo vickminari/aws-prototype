@@ -35,3 +35,16 @@ def test_cors_with_unknown_origin_returns_no_allow_origin_header(db_session):
     response = client.get("/api/health", headers={"Origin": "http://evil.example.com"})
 
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_openapi_error_examples_match_each_response():
+    responses = create_app().openapi()["paths"]["/api/health"]["get"]["responses"]
+
+    def example(status):
+        return responses[status]["content"]["application/json"]["example"]
+
+    assert example("503") == {
+        "detail": "Banco de dados indisponível",
+        "code": "DATABASE_UNAVAILABLE",
+    }
+    assert example("500") == {"detail": "Erro interno do servidor", "code": "INTERNAL_ERROR"}
