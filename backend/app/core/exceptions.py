@@ -72,3 +72,10 @@ class NotFoundError(DomainError):
 
     code = "NOT_FOUND"
     message = "Recurso não encontrado"
+
+
+class DatabaseUnavailableError(DomainError):
+    """O banco de dados não respondeu (usado pelo health check)."""
+
+    code = "DATABASE_UNAVAILABLE"
+    message = "Banco de dados indisponível"

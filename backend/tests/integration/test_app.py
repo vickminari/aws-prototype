@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.dependencies import get_db
 from app.main import create_app
 
 
@@ -13,19 +14,37 @@ def test_docs_returns_200_under_api_prefix():
     assert "/api/health" in openapi.json()["paths"]
 
 
-def test_cors_with_configured_origin_returns_allow_origin_header():
-    settings = Settings(cors_origins="http://localhost:5173")
-    client = TestClient(create_app(settings))
+def cors_client(db_session):
+    """App com CORS configurado; usa o SQLite do teste porque /api/health consulta o banco."""
+    app = create_app(Settings(_env_file=None, cors_origins="http://localhost:5173"))
+    app.dependency_overrides[get_db] = lambda: db_session
+    return TestClient(app)
+
+
+def test_cors_with_configured_origin_returns_allow_origin_header(db_session):
+    client = cors_client(db_session)
 
     response = client.get("/api/health", headers={"Origin": "http://localhost:5173"})
 
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
-def test_cors_with_unknown_origin_returns_no_allow_origin_header():
-    settings = Settings(cors_origins="http://localhost:5173")
-    client = TestClient(create_app(settings))
+def test_cors_with_unknown_origin_returns_no_allow_origin_header(db_session):
+    client = cors_client(db_session)
 
     response = client.get("/api/health", headers={"Origin": "http://evil.example.com"})
 
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_openapi_error_examples_match_each_response():
+    responses = create_app().openapi()["paths"]["/api/health"]["get"]["responses"]
+
+    def example(status):
+        return responses[status]["content"]["application/json"]["example"]
+
+    assert example("503") == {
+        "detail": "Banco de dados indisponível",
+        "code": "DATABASE_UNAVAILABLE",
+    }
+    assert example("500") == {"detail": "Erro interno do servidor", "code": "INTERNAL_ERROR"}

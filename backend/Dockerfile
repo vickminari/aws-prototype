@@ -14,6 +14,9 @@ COPY pyproject.toml README.md ./
 COPY app ./app
 RUN pip install .
 
+# Migrações: o entrypoint roda "alembic upgrade head" antes de subir a API
+COPY alembic.ini ./
+COPY alembic ./alembic
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
