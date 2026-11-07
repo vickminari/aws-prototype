@@ -117,6 +117,7 @@ def test_register_with_invalid_field_returns_422_without_persisting(
     response = client.post(REGISTER_URL, json=registration_data | {field: value})
 
     assert response.status_code == 422
+    assert "password" not in registration_data or registration_data["password"] not in response.text
     assert db_session.scalar(select(func.count()).select_from(User)) == 0
 
 
@@ -127,6 +128,8 @@ def test_register_with_missing_required_field_returns_422(client, registration_d
     response = client.post(REGISTER_URL, json=registration_data)
 
     assert response.status_code == 422
+    if "password" in registration_data:
+        assert registration_data["password"] not in response.text
 
 
 def test_register_validation_error_does_not_echo_password(client, registration_data):
@@ -136,6 +139,9 @@ def test_register_validation_error_does_not_echo_password(client, registration_d
 
     assert response.status_code == 422
     assert password not in response.text
+    errors = response.json()["detail"]
+    assert any(error["loc"] == ["body", "password"] for error in errors)
+    assert all(set(error) == {"loc", "msg", "type"} for error in errors)
 
 
 def test_register_is_documented_as_public_with_expected_responses(client):

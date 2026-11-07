@@ -110,6 +110,22 @@ app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
 
 Para `get_storage`, faça o override do mesmo jeito.
 
+## Cadastro (issue #8)
+
+`POST /api/auth/register` recebe JSON com `full_name`, `username`, `email`,
+`password` e `description` opcional. Retorna **201** com `UserRead`: UUID,
+nome, username, email, descrição, `profile_image_url` (inicialmente `null`)
+e data de criação. A senha é armazenada somente como hash Argon2id.
+
+Email e username são normalizados em minúsculas antes de verificar unicidade.
+Conflitos retornam **409** com `EMAIL_ALREADY_EXISTS` ou
+`USERNAME_ALREADY_EXISTS`. Entradas inválidas retornam **422** com erros em
+`detail` (`loc`, `msg`, `type`), sem os valores enviados ou contexto interno.
+O handler de validação aplica essa remoção às requisições da API.
+
+Exemplos de entrada, saída e conflitos estão em `/api/docs`.
+O cadastro não emite JWT nem cookie; login, HttpOnly e CSRF pertencem à #9.
+
 ## Banco de dados
 
 - Modelos em `app/models/`, herdando de `Base` (`app/core/database.py`). Use só tipos genéricos
