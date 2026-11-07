@@ -120,3 +120,39 @@ def test_register_after_rejected_duplicate_can_create_another_user(
 
     assert user.email == "novo@example.com"
     assert db_session.scalar(select(func.count()).select_from(User)) == 2
+
+
+@pytest.mark.parametrize(
+    "field, expected_error",
+    [("email", EmailAlreadyExistsError), ("username", UsernameAlreadyExistsError)],
+)
+def test_register_translates_database_duplicate_and_recovers_session(
+    db_session, user_factory, registration_data, monkeypatch, field, expected_error
+):
+    payload = UserCreate(**registration_data)
+    user_factory(**{field: getattr(payload, field).lower()})
+    original_scalar = db_session.scalar
+    checks = 0
+
+    def miss_initial_checks(*args, **kwargs):
+        nonlocal checks
+        checks += 1
+        # Simula consultas que não viram um cadastro concorrente: o índice
+        # único real do SQLite rejeitará o INSERT, exigindo rollback.
+        if checks <= 2:
+            return None
+        return original_scalar(*args, **kwargs)
+
+    monkeypatch.setattr(db_session, "scalar", miss_initial_checks)
+
+    with pytest.raises(expected_error):
+        auth_service.register(db_session, payload)
+
+    assert original_scalar(select(func.count()).select_from(User)) == 1
+    user = auth_service.register(
+        db_session,
+        UserCreate(
+            **(registration_data | {"username": "novo.usuario", "email": "novo@example.com"})
+        ),
+    )
+    assert user.email == "novo@example.com"
