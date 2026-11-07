@@ -34,15 +34,17 @@ def test_create_user_persists_and_reads_with_defaults(db_session):
 
 
 def test_update_user_refreshes_updated_at_and_keeps_created_at(db_session, user_factory):
-    user = user_factory()
-    created_at, updated_at = user.created_at, user.updated_at
+    # Data antiga fixa: no Windows o relógio pode não avançar entre o INSERT e o UPDATE
+    old_updated_at = datetime(2000, 1, 1, tzinfo=UTC)
+    user = user_factory(updated_at=old_updated_at)
+    created_at = user.created_at
 
     user.full_name = "Nome Alterado"
     db_session.commit()
     db_session.refresh(user)
 
     assert user.created_at == created_at
-    assert user.updated_at > updated_at
+    assert user.updated_at > old_updated_at
 
 
 @pytest.mark.parametrize("field", ["email", "username"])
