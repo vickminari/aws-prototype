@@ -26,6 +26,18 @@ def security_settings(monkeypatch):
     get_settings.cache_clear()
 
 
+@pytest.fixture
+def valid_claims():
+    """Payload independente do emissor para isolar os testes de validação."""
+    now = int(datetime.now(UTC).timestamp())
+    return {
+        "sub": str(USER_ID),
+        "jti": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        "iat": now,
+        "exp": now + 900,
+    }
+
+
 def test_hash_password_uses_argon2id_and_random_salt():
     password = "Senha-de-teste-123!"
     first = hash_password(password)
@@ -110,20 +122,20 @@ def test_decode_access_token_rejects_malformed_token(token):
 
 
 @pytest.mark.parametrize("missing_claim", ["sub", "jti", "iat", "exp"])
-def test_decode_access_token_rejects_missing_claim(missing_claim, security_settings):
-    claims = decode_access_token(create_access_token(USER_ID))
-    del claims[missing_claim]
-    token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
+def test_decode_access_token_rejects_missing_claim(missing_claim, security_settings, valid_claims):
+    del valid_claims[missing_claim]
+    token = jwt.encode(valid_claims, security_settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)
 
 
 @pytest.mark.parametrize("algorithm", ["HS384", "none"])
-def test_decode_access_token_rejects_unexpected_algorithm(algorithm, security_settings):
-    claims = decode_access_token(create_access_token(USER_ID))
+def test_decode_access_token_rejects_unexpected_algorithm(
+    algorithm, security_settings, valid_claims
+):
     key = security_settings.jwt_secret if algorithm != "none" else ""
-    token = jwt.encode(claims, key, algorithm=algorithm)
+    token = jwt.encode(valid_claims, key, algorithm=algorithm)
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)
@@ -142,19 +154,17 @@ def test_decode_access_token_rejects_unexpected_algorithm(algorithm, security_se
         ("exp", {}),
     ],
 )
-def test_decode_access_token_rejects_invalid_claim(claim, value, security_settings):
-    claims = decode_access_token(create_access_token(USER_ID))
-    claims[claim] = value
-    token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
+def test_decode_access_token_rejects_invalid_claim(claim, value, security_settings, valid_claims):
+    valid_claims[claim] = value
+    token = jwt.encode(valid_claims, security_settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)
 
 
-def test_decode_access_token_rejects_future_issued_at(security_settings):
-    claims = decode_access_token(create_access_token(USER_ID))
-    claims["iat"] = int((datetime.now(UTC) + timedelta(minutes=1)).timestamp())
-    token = jwt.encode(claims, security_settings.jwt_secret, algorithm="HS256")
+def test_decode_access_token_rejects_future_issued_at(security_settings, valid_claims):
+    valid_claims["iat"] += 60
+    token = jwt.encode(valid_claims, security_settings.jwt_secret, algorithm="HS256")
 
     with pytest.raises(InvalidTokenError):
         decode_access_token(token)

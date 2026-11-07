@@ -2,6 +2,25 @@
 
 Status: decisão aceita; integração HTTP a implementar nas issues abaixo.
 
+Responsável pela decisão: Gabriel Lopes, com autonomia autorizada por José
+Victor. Este documento é o registro versionado da mudança e contém os contratos
+necessários para implementá-la, sem depender dos documentos de planejamento
+mantidos apenas como referência local.
+
+Substitui a orientação anterior de Bearer com armazenamento em `localStorage`
+para o navegador e antecipa cookie HttpOnly e HTTPS para esta entrega.
+Preserva JWT HS256, identidade UUID, revogação por `jti`, validade configurável
+e ausência de refresh token.
+
+## Limite da entrega #7
+
+A #7 entrega `hash_password`, `verify_password`, `create_access_token(user_id: UUID)`
+e `decode_access_token`, com testes unitários. O UUID é serializado como texto
+em `sub`; o token contém também `jti` UUID4, `iat` e `exp`.
+
+Cookies, CSRF, leitura da sessão e revogação no banco serão implementados na #9.
+A conclusão do core não significa que o fluxo HttpOnly já esteja funcionando.
+
 ## Contexto e decisão
 
 O navegador recebe o JWT em um cookie `HttpOnly` definido pelo backend.
@@ -79,6 +98,7 @@ testados na #9. Documentar as novas variáveis de ambiente nessa entrega.
 | #13 — Login/cadastro | Consumir o novo contrato: obter CSRF, enviar formulário, renovar CSRF após login e buscar `/me`. Login automático após cadastro usa o mesmo fluxo. |
 | #14 — Logout | Aguardar o logout no servidor e só então limpar o estado local. Falha de rede não deve ser apresentada como revogação concluída. |
 | #18 e #22 — SGs e EC2 | Compatibilizar entrada HTTPS com a terminação TLS escolhida na #23; se terminar na EC2, permitir 443 no SG web. |
+| #21 — Parameter Store | Provisionar o segredo CSRF separado do JWT e incluí-lo no carregamento de configuração, conforme o nome e formato definidos na #9. |
 | #23 — Deploy | Disponibilizar HTTPS com certificado confiável para frontend e API na mesma origem; preservar `Set-Cookie` e headers de proxy. HTTP no Elastic IP pode servir ao healthcheck inicial, mas não atende ao aceite final da autenticação. |
 | #24 — Validação | Testar sessão real no navegador, atributos do cookie, CSRF, recarregamento, expiração e revogação. |
 
