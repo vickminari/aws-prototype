@@ -156,7 +156,7 @@ Exemplo: `GET /api/users/me`.
        "/me",
        response_model=UserRead,
        summary="Retorna o usuário logado",
-       responses={401: {"model": ErrorRead}},
+       responses={401: error_response("Não autenticado", InvalidTokenError)},
    )
    def read_me(current_user: User = Depends(get_current_user)):
        return user_service.to_read(current_user)
@@ -165,7 +165,8 @@ Exemplo: `GET /api/users/me`.
 5. **Registre o router** em `create_app()` (`app/main.py`):
    `app.include_router(user_controller.router, prefix=API_PREFIX)`.
 6. Exceção nova? Crie em `core/exceptions.py` (`code` + `message`) e, se o status não for 400,
-   adicione em `DOMAIN_ERROR_STATUS` no `main.py`.
+   adicione em `DOMAIN_ERROR_STATUS` no `main.py`. Documente-a na rota com
+   `error_response(...)`: assim o Swagger mostra o exemplo certo para cada status.
 7. Rode `pytest` e `ruff check .`, commit `feat(...)`; depois `refactor(...)` se houver melhoria.
 8. Variável de ambiente nova? Adicione em `core/config.py`, `.env.example` e na ARQ §5.8.
 

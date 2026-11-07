@@ -19,7 +19,7 @@ from app.core.exceptions import (
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
-from app.schemas.error import ErrorRead
+from app.schemas.error import error_response
 
 API_PREFIX = "/api"
 
@@ -36,6 +36,8 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     DatabaseUnavailableError: 503,
 }
 DEFAULT_DOMAIN_ERROR_STATUS = 400
+INTERNAL_ERROR_DETAIL = "Erro interno do servidor"
+INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +65,7 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
     logger.exception("Erro não tratado em %s %s", request.method, request.url.path)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Erro interno do servidor", "code": "INTERNAL_ERROR"},
+        content={"detail": INTERNAL_ERROR_DETAIL, "code": INTERNAL_ERROR_CODE},
     )
 
 
@@ -84,7 +86,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url=f"{API_PREFIX}/docs",
         openapi_url=f"{API_PREFIX}/openapi.json",
         redoc_url=None,
-        responses={500: {"model": ErrorRead, "description": "Erro inesperado no servidor"}},
+        responses={
+            500: error_response(
+                "Erro inesperado no servidor",
+                detail=INTERNAL_ERROR_DETAIL,
+                code=INTERNAL_ERROR_CODE,
+            )
+        },
     )
 
     if settings.cors_origins:

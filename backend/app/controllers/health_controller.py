@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import DatabaseUnavailableError
 from app.dependencies import get_db
-from app.schemas.error import ErrorRead
+from app.schemas.error import error_response
 from app.schemas.health import HealthRead
 from app.services import health_service
 
@@ -16,7 +17,7 @@ router = APIRouter(tags=["health"])
     description="Usado pelo healthcheck do Docker e pelo deploy. Não exige autenticação.",
     responses={
         200: {"description": "API e banco funcionando"},
-        503: {"model": ErrorRead, "description": "Banco de dados indisponível"},
+        503: error_response("Banco de dados indisponível", DatabaseUnavailableError),
     },
 )
 def health(db: Session = Depends(get_db)) -> HealthRead:

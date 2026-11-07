@@ -1,14 +1,36 @@
-from pydantic import BaseModel, ConfigDict
+from typing import Any
+
+from pydantic import BaseModel
+
+from app.core.exceptions import DomainError
 
 
 class ErrorRead(BaseModel):
-    """Formato padrão de erro da API (ARQ §5.2). Use em `responses=` das rotas."""
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [{"detail": "Email já cadastrado", "code": "EMAIL_ALREADY_EXISTS"}]
-        }
-    )
+    """Formato padrão de erro da API (ARQ §5.2). Nas rotas, use `error_response`."""
 
     detail: str
     code: str
+
+
+def error_response(
+    description: str, error: type[DomainError] | None = None, *, detail: str = "", code: str = ""
+) -> dict[str, Any]:
+    """Monta uma entrada de `responses=` com o exemplo do erro que a rota realmente devolve.
+
+    Sem isso o Swagger mostraria o mesmo exemplo genérico em todos os status de erro.
+
+    Args:
+        description: texto exibido ao lado do status no Swagger.
+        error: exceção de domínio; o exemplo usa o `message` e o `code` dela.
+        detail: mensagem do exemplo, para erros que não são `DomainError` (ex.: 500).
+        code: código do exemplo, para erros que não são `DomainError`.
+
+    Exemplo: `responses={409: error_response("Email já cadastrado", EmailAlreadyExistsError)}`.
+    """
+    if error is not None:
+        detail, code = error.message, error.code
+    return {
+        "model": ErrorRead,
+        "description": description,
+        "content": {"application/json": {"example": {"detail": detail, "code": code}}},
+    }
