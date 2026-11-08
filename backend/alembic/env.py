@@ -6,10 +6,10 @@ Rodado por `alembic upgrade head` (no `entrypoint.sh` do container) e por
 
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import create_engine, pool
 
 import app.models  # noqa: F401  (registra as tabelas em Base.metadata)
-from alembic import context
 from app.core.config import get_settings
 from app.core.database import Base
 
