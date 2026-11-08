@@ -12,6 +12,20 @@ class ErrorRead(BaseModel):
     code: str
 
 
+class ValidationIssue(BaseModel):
+    """Erro por campo; omite os valores de entrada e o contexto interno."""
+
+    loc: list[str | int]
+    msg: str
+    type: str
+
+
+class ValidationErrorRead(BaseModel):
+    """Contrato público das respostas 422 de validação da requisição."""
+
+    detail: list[ValidationIssue]
+
+
 def error_response(
     description: str, error: type[DomainError] | None = None, *, detail: str = "", code: str = ""
 ) -> dict[str, Any]:

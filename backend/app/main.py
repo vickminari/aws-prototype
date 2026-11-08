@@ -20,7 +20,7 @@ from app.core.exceptions import (
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
-from app.schemas.error import error_response
+from app.schemas.error import ValidationErrorRead, ValidationIssue, error_response
 
 API_PREFIX = "/api"
 
@@ -78,11 +78,9 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
     """
     return JSONResponse(
         status_code=422,
-        content={
-            "detail": [
-                {key: error[key] for key in ("loc", "msg", "type")} for error in exc.errors()
-            ]
-        },
+        content=ValidationErrorRead(
+            detail=[ValidationIssue.model_validate(error) for error in exc.errors()]
+        ).model_dump(mode="json"),
     )
 
 

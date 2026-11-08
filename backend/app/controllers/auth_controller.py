@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
 from app.dependencies import get_db
-from app.schemas.error import ErrorRead
+from app.schemas.error import ErrorRead, ValidationErrorRead
 from app.schemas.user import UserCreate, UserRead
 from app.services import auth_service
 
@@ -45,7 +45,23 @@ router = APIRouter(prefix="/auth", tags=["auth"])
                 }
             },
         },
-        422: {"description": "Dados de entrada inválidos; valores enviados não são retornados"},
+        422: {
+            "model": ValidationErrorRead,
+            "description": "Dados de entrada inválidos; valores enviados não são retornados",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "detail": [
+                            {
+                                "loc": ["body", "password"],
+                                "msg": "A senha deve conter ao menos uma letra e um número",
+                                "type": "value_error",
+                            }
+                        ]
+                    }
+                }
+            },
+        },
     },
 )
 def register(payload: UserCreate, db: Session = Depends(get_db)) -> UserRead:
