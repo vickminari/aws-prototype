@@ -74,3 +74,26 @@ class UserRead(BaseModel):
     description: str | None = None
     profile_image_url: str | None = None
     created_at: datetime
+
+
+class UserProfileRead(UserRead):
+    """Dados públicos adicionais do perfil autenticado."""
+
+    is_active: bool
+    updated_at: datetime
+
+
+class UserUpdate(BaseModel):
+    """Campos aceitos na atualização parcial do perfil."""
+
+    full_name: str | None = None
+    username: str | None = None
+    email: str | None = None
+    description: str | None = None
+
+
+class PasswordChange(BaseModel):
+    """Dados necessários para trocar a senha do usuário."""
+
+    current_password: str
+    new_password: str = Field(min_length=8)

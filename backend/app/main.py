@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.controllers import auth_controller, health_controller
+from app.controllers import auth_controller, health_controller, user_controller
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     DatabaseUnavailableError,
@@ -15,6 +15,7 @@ from app.core.exceptions import (
     EmailAlreadyExistsError,
     InvalidCredentialsError,
     InvalidImageError,
+    InvalidPasswordError,
     InvalidTokenError,
     NotFoundError,
     UsernameAlreadyExistsError,
@@ -32,6 +33,7 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     InvalidCredentialsError: 401,
     InvalidTokenError: 401,
     WrongPasswordError: 400,
+    InvalidPasswordError: 422,
     InvalidImageError: 422,
     NotFoundError: 404,
     DatabaseUnavailableError: 503,
@@ -125,6 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(health_controller.router, prefix=API_PREFIX)
     app.include_router(auth_controller.router, prefix=API_PREFIX)
+    app.include_router(user_controller.router, prefix=API_PREFIX)
     return app
 
 
