@@ -10,12 +10,12 @@ from app.core.exceptions import (
 )
 from app.core.security import hash_password, verify_password
 from app.models import User
-from app.schemas.user import PasswordChange, UserRead, UserUpdate
+from app.schemas.user import PasswordChange, UserProfileRead, UserUpdate
 
 
-def to_read(user: User) -> UserRead:
+def to_read(user: User) -> UserProfileRead:
     """Converte um usuário em sua representação pública."""
-    return UserRead(
+    return UserProfileRead(
         id=user.id,
         full_name=user.full_name,
         username=user.username,

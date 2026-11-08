@@ -3,10 +3,11 @@
 import logging
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.controllers import health_controller, user_controller
+from app.controllers import auth_controller, health_controller, user_controller
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     DatabaseUnavailableError,
@@ -20,7 +21,7 @@ from app.core.exceptions import (
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
-from app.schemas.error import error_response
+from app.schemas.error import ValidationErrorRead, ValidationIssue, error_response
 
 API_PREFIX = "/api"
 
@@ -71,6 +72,20 @@ async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
+async def validation_error_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Preserva os erros por campo sem devolver entradas ou contexto sensível.
+
+    O handler padrão pode ecoar a senha em `input`, inclusive dentro do corpo
+    inteiro quando um campo obrigatório está ausente.
+    """
+    return JSONResponse(
+        status_code=422,
+        content=ValidationErrorRead(
+            detail=[ValidationIssue.model_validate(error) for error in exc.errors()]
+        ).model_dump(mode="json"),
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Monta a aplicação FastAPI.
 
@@ -108,8 +123,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.add_exception_handler(DomainError, domain_error_handler)
     app.add_exception_handler(Exception, unexpected_error_handler)
+    app.add_exception_handler(RequestValidationError, validation_error_handler)
 
     app.include_router(health_controller.router, prefix=API_PREFIX)
+    app.include_router(auth_controller.router, prefix=API_PREFIX)
     app.include_router(user_controller.router, prefix=API_PREFIX)
     return app
 

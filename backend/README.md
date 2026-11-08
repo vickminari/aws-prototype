@@ -110,6 +110,45 @@ app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
 
 Para `get_storage`, faça o override do mesmo jeito.
 
+## Cadastro (issue #8)
+
+`POST /api/auth/register` recebe JSON com `full_name`, `username`, `email`,
+`password` e `description` opcional. Retorna **201** com `UserRead`: UUID,
+nome, username, email, descrição, `profile_image_url` (inicialmente `null`)
+e data de criação. A senha é armazenada somente como hash Argon2id.
+
+Email e username são normalizados em minúsculas antes de verificar unicidade.
+Conflitos retornam **409** com `EMAIL_ALREADY_EXISTS` ou
+`USERNAME_ALREADY_EXISTS`. Entradas inválidas retornam **422** com erros em
+`detail` (`loc`, `msg`, `type`), sem os valores enviados ou contexto interno.
+O handler de validação aplica essa remoção às requisições da API.
+
+Exemplos de entrada, saída e conflitos estão em `/api/docs`.
+O cadastro não emite JWT nem cookie; login, HttpOnly e CSRF pertencem à #9.
+
+Validações: nome não vazio (até 120 caracteres); username de 3 a 30 caracteres
+com letras ASCII, números, ponto ou sublinhado; email válido (até 254 caracteres);
+senha com ao menos 8 caracteres, uma letra e um número; descrição opcional
+de até 500 caracteres. A senha não é normalizada nem tem espaços removidos.
+
+Exemplo local com dados fictícios:
+
+```bash
+curl -i http://localhost:8000/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"full_name":"Maria Silva","username":"maria.silva","email":"maria@example.com","password":"Senha123"}'
+```
+
+Repetir o cadastro retorna 409. A resposta 422 é descrita por
+`ValidationErrorRead` no Swagger; seu `detail` é uma lista de erros por campo,
+enquanto erros de domínio 409 usam `detail` textual e `code`.
+
+Testes específicos do cadastro:
+
+```bash
+pytest tests/unit/test_user_schemas.py tests/unit/test_auth_service.py tests/integration/test_register.py
+```
+
 ## Banco de dados
 
 - Modelos em `app/models/`, herdando de `Base` (`app/core/database.py`). Use só tipos genéricos
