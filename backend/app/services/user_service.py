@@ -2,9 +2,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.database import utcnow
-from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
+from app.core.exceptions import (
+    EmailAlreadyExistsError,
+    InvalidPasswordError,
+    UsernameAlreadyExistsError,
+    WrongPasswordError,
+)
+from app.core.security import hash_password, verify_password
 from app.models import User
-from app.schemas.user import UserRead, UserUpdate
+from app.schemas.user import PasswordChange, UserRead, UserUpdate
 
 
 def to_read(user: User) -> UserRead:
@@ -44,3 +50,15 @@ def update_profile(db: Session, user: User, payload: UserUpdate) -> User:
         db.commit()
         db.refresh(user)
     return user
+
+
+def change_password(db: Session, user: User, payload: PasswordChange) -> None:
+    """Troca a senha após validar a senha atual e a nova senha."""
+    if not verify_password(payload.current_password, user.hashed_password):
+        raise WrongPasswordError()
+    if len(payload.new_password) < 8 or verify_password(payload.new_password, user.hashed_password):
+        raise InvalidPasswordError()
+
+    user.hashed_password = hash_password(payload.new_password)
+    user.updated_at = utcnow()
+    db.commit()

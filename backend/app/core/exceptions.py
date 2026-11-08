@@ -60,6 +60,13 @@ class WrongPasswordError(DomainError):
     message = "Senha atual incorreta"
 
 
+class InvalidPasswordError(DomainError):
+    """A nova senha não atende à política ou é igual à senha atual."""
+
+    code = "INVALID_PASSWORD"
+    message = "A nova senha é inválida"
+
+
 class InvalidImageError(DomainError):
     """Imagem de perfil com tipo, assinatura ou tamanho não permitidos."""
 
