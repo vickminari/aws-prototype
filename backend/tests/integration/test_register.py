@@ -154,3 +154,23 @@ def test_register_is_documented_as_public_with_expected_responses(client):
     assert operation["responses"]["201"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/UserRead"
     }
+    assert operation["responses"]["422"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ValidationErrorRead"
+    }
+    examples = operation["responses"]["409"]["content"]["application/json"]["examples"]
+    assert examples["email"]["value"]["code"] == "EMAIL_ALREADY_EXISTS"
+    assert examples["username"]["value"]["code"] == "USERNAME_ALREADY_EXISTS"
+
+
+def test_register_with_invalid_json_returns_422_without_echoing_body(client):
+    password = "Senha-secreta-123"
+
+    response = client.post(
+        REGISTER_URL,
+        content='{"password": "' + password + '",',
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    assert password not in response.text
+    assert all(set(error) == {"loc", "msg", "type"} for error in response.json()["detail"])

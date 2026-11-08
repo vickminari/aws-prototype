@@ -3,6 +3,7 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
@@ -120,6 +121,24 @@ def test_register_after_rejected_duplicate_can_create_another_user(
 
     assert user.email == "novo@example.com"
     assert db_session.scalar(select(func.count()).select_from(User)) == 2
+
+
+def test_register_preserves_unrelated_integrity_error_and_rolls_back(
+    db_session, registration_data, monkeypatch
+):
+    failure = IntegrityError("INSERT", {}, RuntimeError("outra restrição"))
+
+    def fail_commit():
+        raise failure
+
+    monkeypatch.setattr(db_session, "commit", fail_commit)
+
+    with pytest.raises(IntegrityError) as error:
+        auth_service.register(db_session, UserCreate(**registration_data))
+
+    assert error.value is failure
+    assert not db_session.new
+    assert db_session.scalar(select(func.count()).select_from(User)) == 0
 
 
 @pytest.mark.parametrize(
