@@ -21,7 +21,7 @@ def test_get_me_returns_user_data_and_created_at(client, auth_user):
     assert data["profile_image_url"] is None
     assert data["description"] == auth_user.description
     assert data["is_active"] is auth_user.is_active
-    assert data["created_at"] == auth_user.created_at.isoformat()
+    assert datetime.fromisoformat(data["created_at"].replace("Z", "+00:00")) == auth_user.created_at
 
 
 def test_patch_me_updates_only_sent_fields(client, auth_user):
@@ -66,7 +66,10 @@ def test_patch_me_does_not_change_created_at(client, auth_user):
     )
 
     assert response.status_code == 200
-    assert response.json()["created_at"] == original_created_at.isoformat()
+    assert (
+        datetime.fromisoformat(response.json()["created_at"].replace("Z", "+00:00"))
+        == original_created_at
+    )
 
 
 def test_change_password_rejects_wrong_current_password(client, auth_user):

@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.controllers import health_controller
+from app.controllers import health_controller, user_controller
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
     DatabaseUnavailableError,
@@ -108,6 +108,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_exception_handler(Exception, unexpected_error_handler)
 
     app.include_router(health_controller.router, prefix=API_PREFIX)
+    app.include_router(user_controller.router, prefix=API_PREFIX)
     return app
 
 
