@@ -49,7 +49,7 @@ Os testes ficam ao lado do arquivo testado (`Componente.test.tsx`) e rodam em js
 docker build -t proto1-web ./frontend
 ```
 
-O [`Dockerfile`](Dockerfile) é multi-stage: `node` gera o `dist/` e `nginx:alpine` serve os arquivos. O [`nginx.conf`](nginx.conf) devolve o `index.html` para qualquer rota da SPA, encaminha `/api/` para `http://api:8000` (serviço `api` do Docker Compose), limita o upload a 3 MB e envia os headers de segurança. Fora do Compose o nome `api` não existe, então o container sozinho não sobe; ele roda com o `docker-compose.prod.yml` (#23).
+O [`Dockerfile`](Dockerfile) é multi-stage: `node` gera o `dist/` e `nginx:alpine` serve os arquivos. O [`nginx.conf`](nginx.conf) devolve o `index.html` para qualquer rota da SPA, encaminha `/api/` para `http://api:8000` (serviço `api` do Docker Compose), limita o upload a 3 MB, comprime JS/CSS/JSON com gzip e envia os headers de segurança. Fora do Compose o nome `api` não existe, então o container sozinho não sobe; ele roda com o `docker-compose.prod.yml` (#23).
 
 ## Estrutura de pastas
 
