@@ -1,13 +1,43 @@
-"""Regras de cadastro de usuários, independentes da camada HTTP."""
+"""Regras de cadastro e autenticação, independentes da camada HTTP."""
+
+from secrets import token_urlsafe
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
-from app.core.security import hash_password
+from app.core.exceptions import (
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    UsernameAlreadyExistsError,
+)
+from app.core.security import hash_password, verify_password
 from app.models import User
 from app.schemas.user import UserCreate
+
+# Calculado uma vez por processo para verificar uma senha mesmo sem usuário.
+# Evita o retorno antecipado que eliminaria o custo do Argon2 nesse caminho.
+_DUMMY_PASSWORD_HASH = hash_password(token_urlsafe(32))
+
+
+def authenticate(db: Session, identifier: str, password: str) -> User:
+    """Autentica por username ou email, sem alterar a senha ou o usuário.
+
+    Raises:
+        InvalidCredentialsError: se as credenciais forem inválidas ou o usuário
+            estiver inativo, sempre com a mesma mensagem pública.
+    """
+    normalized_identifier = identifier.lower()
+    user = db.scalar(
+        select(User).where(
+            (User.username == normalized_identifier) | (User.email == normalized_identifier)
+        )
+    )
+    hashed_password = user.hashed_password if user is not None else _DUMMY_PASSWORD_HASH
+    password_matches = verify_password(password, hashed_password)
+    if user is None or not password_matches or not user.is_active:
+        raise InvalidCredentialsError()
+    return user
 
 
 def _ensure_unique_identity(db: Session, email: str, username: str) -> None:
