@@ -234,6 +234,32 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
+### Configuração de cookies e CSRF (issue #9, etapa 2)
+
+`controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
+`access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
+`HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`; produção sempre usa `Secure`.
+A duração configurada é `JWT_EXPIRE_MINUTES * 60` segundos. Os helpers não
+validam o JWT e ainda não estão ligados a endpoints de login/logout nesta etapa.
+
+| Variável | Desenvolvimento/testes | Produção |
+|---|---|---|
+| `CSRF_SECRET` | Padrão local se omitida | Segredo aleatório exclusivo, mínimo 32 caracteres; não aceita o padrão local |
+| `CSRF_TRUSTED_ORIGINS` | Lista explícita HTTP(S), por exemplo `http://localhost:5173` | Lista explícita HTTPS obrigatória, por exemplo `https://app.example.com` |
+
+`CSRF_SECRET` deve ser diferente de `JWT_SECRET`; gere os dois independentemente
+e provisione o novo segredo via Parameter Store na #21. Comprimento mínimo não
+substitui geração aleatória. Nunca use os valores fictícios dos testes no deploy.
+
+Origens são separadas por vírgula e incluem esquema, host e porta opcional,
+sem credenciais, caminhos, query, fragmento ou curingas. A barra final é removida.
+O padrão vazio não autoriza origens. Essa lista é separada de `CORS_ORIGINS`:
+mesmo servindo frontend/API na mesma origem, configure a origem pública em CSRF.
+
+Esta etapa prepara a configuração; a emissão e verificação do token CSRF e a
+proteção das escritas serão implementadas na etapa 3. Não há fallback automático
+para cookie sem `Secure` em produção.
+
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com
 `STORAGE_BACKEND=s3` sem `S3_BUCKET`.

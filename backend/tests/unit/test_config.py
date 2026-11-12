@@ -74,6 +74,8 @@ def test_prod_with_strong_jwt_secret_is_valid():
         _env_file=None,
         environment="prod",
         jwt_secret="x" * 32,
+        csrf_secret="y" * 32,
+        csrf_trusted_origins=["https://app.example.com"],
         storage_backend="s3",
         s3_bucket="proto1-avatars-teste",
     )

@@ -88,6 +88,13 @@ Incluir a proteção na #9, antes da integração com o frontend:
 Detalhes internos do formato e armazenamento auxiliar serão implementados e
 testados na #9. Documentar as novas variáveis de ambiente nessa entrega.
 
+Configuração definida na etapa 2 da #9: `CSRF_SECRET` (segredo separado de
+`JWT_SECRET`, mínimo 32 caracteres, padrão local vedado em produção) e
+`CSRF_TRUSTED_ORIGINS` (origens explícitas separadas por vírgula, obrigatórias
+e HTTPS em produção, independentes de `CORS_ORIGINS`). A configuração não
+substitui a validação das requisições, a implementar na etapa 3. A #21 deverá
+provisionar `CSRF_SECRET` e carregar ambas as variáveis no ambiente de produção.
+
 ## Issues impactadas
 
 | Issue | Ajuste necessário |
