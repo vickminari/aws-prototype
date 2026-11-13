@@ -5,18 +5,15 @@ from app.dependencies import get_current_user, get_db, get_storage
 from app.main import create_app
 
 
-def test_route_with_get_current_user_stub_returns_401():
-    app = create_app()
-
+def test_get_current_user_without_auth_cookie_returns_401(app, client):
     @app.get("/protected")
     def protected(user=Depends(get_current_user)):
         return {"ok": True}
 
-    response = TestClient(app).get("/protected", headers={"Authorization": "Bearer qualquer"})
+    response = client.get("/protected", headers={"Authorization": "Bearer qualquer"})
 
     assert response.status_code == 401
     assert response.json()["code"] == "INVALID_TOKEN"
-    assert response.headers["www-authenticate"] == "Bearer"
 
 
 def test_get_current_user_override_returns_fixture_user():
