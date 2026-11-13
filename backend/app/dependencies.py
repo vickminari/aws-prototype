@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.exceptions import InvalidTokenError
+from app.services.storage import StorageService, create_storage
 
 # auto_error=False: a ausência de token também vira InvalidTokenError (formato padrão de erro)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -43,10 +44,8 @@ def get_current_user(token: str | None = Depends(oauth2_scheme)) -> NoReturn:
     raise InvalidTokenError()
 
 
-def get_storage() -> NoReturn:
-    """Stub: o `StorageService` (local/S3) é implementado na issue #11.
+def get_storage() -> StorageService:
+    """Cria o backend de storage configurado para a aplicação."""
+    from app.core.config import get_settings
 
-    Raises:
-        NotImplementedError: sempre; use `dependency_overrides` nos testes.
-    """
-    raise NotImplementedError("StorageService ainda não implementado (issue #11)")
+    return create_storage(get_settings())

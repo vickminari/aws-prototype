@@ -70,7 +70,7 @@ def test_read_me_returns_logged_user(client, auth_user):
 ```
 app/
 ├── main.py              # create_app(): routers, CORS, handlers de erro, docs em /api/docs
-├── dependencies.py      # Depends: get_db, get_current_user e get_storage (stubs até #9 e #11)
+├── dependencies.py      # Depends: get_db, get_current_user e get_storage
 ├── core/                # config.py (env), database.py (engine, SessionLocal, Base), security.py, exceptions.py
 ├── schemas/   (VIEW)    # Pydantic: o que entra e o que sai da API
 ├── controllers/ (CONTROLLER) # routers finos: recebem dependências e chamam UM método de service
@@ -108,7 +108,14 @@ fixture `auth_user` (ver [Fixtures](#fixtures-testsconftestpy)), que faz:
 app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
 ```
 
-Para `get_storage`, faça o override do mesmo jeito.
+Para `get_storage`, faça o override do mesmo jeito. Em desenvolvimento, o backend local
+grava em `backend/media` e serve os arquivos em `/api/media`; em produção, configure
+`STORAGE_BACKEND=s3` e `S3_BUCKET`. O backend usa a role da instância/ambiente AWS e
+gera URLs pré-assinadas com validade de uma hora, sem access keys no código.
+
+O upload de avatar é `POST /api/users/me/avatar` com multipart `file`; JPEG, PNG e WebP
+são aceitos pela assinatura binária, com limite de 2 MB. O segundo upload remove o
+objeto anterior, e `DELETE /api/users/me/avatar` remove a imagem atual.
 
 ## Cadastro (issue #8)
 
