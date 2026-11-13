@@ -1,0 +1,52 @@
+# Produção na EC2 (ARQ §9). Desenvolvimento usa docker-compose.yml.
+#   infra/ec2/deploy.sh   → atualiza o código, sobe os containers e testa /api/health
+#
+# Sem container de banco: a API usa o RDS (#20). Configuração e segredos vêm do
+# .env na raiz do repositório, gerado na EC2 a partir do Parameter Store (#21);
+# variáveis em backend/.env.example.
+
+# Rotação dos logs: sem limite o json-file cresce até encher o disco da EC2
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      # Fixo aqui para o .env não conseguir desligar as validações de produção
+      ENVIRONMENT: prod
+    restart: unless-stopped
+    # A imagem python:slim não tem curl; urlopen falha com o 503 de banco fora do ar
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+
+  web:
+    build: ./frontend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    healthcheck:
+      # 127.0.0.1: o Nginx escuta só IPv4 e "localhost" pode resolver para ::1
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      api:
+        condition: service_healthy
+        # O Nginx resolve "api" só ao iniciar: reinicia junto quando a API é recriada
+        restart: true
+    logging: *logging
