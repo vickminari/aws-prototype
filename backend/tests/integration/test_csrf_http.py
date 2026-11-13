@@ -1,3 +1,4 @@
+import time
 from http.cookies import SimpleCookie
 
 import pytest
@@ -202,3 +203,62 @@ def test_csrf_rejects_signed_token_from_another_pre_session(csrf_app, protected_
     assert response.status_code == 403
     assert response.json()["code"] == "CSRF_INVALID"
     assert protected_client.app.state.csrf_writes == 0
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Relógio controlado para servidor e cookie jar do cliente (ambos usam time.time)."""
+    now = [time.time()]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+    return now
+
+
+def write_with(client, token):
+    return client.post("/csrf-write", headers={"Origin": ORIGIN, "X-CSRF-Token": token})
+
+
+def test_token_issued_near_pre_session_expiry_is_valid_for_its_lifetime(protected_client, clock):
+    """Recarregar no fim da pré-sessão não pode entregar um token que logo será recusado."""
+    start = clock[0]
+    assert protected_client.get(CSRF_URL).status_code == 200
+
+    clock[0] = start + 59 * 60
+    token = protected_client.get(CSRF_URL).json()["csrf_token"]
+    clock[0] = start + 61 * 60
+
+    response = write_with(protected_client, token)
+
+    assert response.status_code == 200
+    assert protected_client.app.state.csrf_writes == 1
+
+
+def test_reload_returns_the_same_token_while_it_is_fresh(protected_client, clock):
+    """Abas compartilham cookies: um GET de outra aba não invalida o token já entregue."""
+    tab_a = protected_client.get(CSRF_URL).json()["csrf_token"]
+    clock[0] += 10 * 60
+    tab_b = protected_client.get(CSRF_URL).json()["csrf_token"]
+
+    assert tab_b == tab_a
+    assert write_with(protected_client, tab_a).status_code == 200
+    assert write_with(protected_client, tab_b).status_code == 200
+
+
+def test_reload_renews_token_close_to_expiry(protected_client, clock):
+    start = clock[0]
+    first = protected_client.get(CSRF_URL).json()["csrf_token"]
+
+    clock[0] = start + 45 * 60
+    renewed = protected_client.get(CSRF_URL).json()["csrf_token"]
+    clock[0] = start + 75 * 60
+
+    assert renewed != first
+    assert write_with(protected_client, renewed).status_code == 200
+
+
+def test_cross_site_navigation_to_bootstrap_does_not_break_open_tab(protected_client):
+    token = protected_client.get(CSRF_URL).json()["csrf_token"]
+
+    # Navegação de nível superior vinda de outro site também envia cookies SameSite=Lax.
+    protected_client.get(CSRF_URL, headers={"Referer": "https://evil.example.com/"})
+
+    assert write_with(protected_client, token).status_code == 200

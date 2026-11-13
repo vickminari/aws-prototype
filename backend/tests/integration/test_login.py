@@ -11,6 +11,7 @@ from tests.integration.session_support import (
     PASSWORD,
     cookie_name,
     csrf_headers,
+    login,
     put_cookie,
     response_cookies,
 )
@@ -229,3 +230,12 @@ def test_login_openapi_describes_form_and_public_response(session_client):
         "$ref": "#/components/schemas/LoginResponse"
     }
     assert set(document["components"]["schemas"]["LoginResponse"]["properties"]) == {"detail"}
+
+
+def test_authenticated_csrf_token_is_stable_across_tabs(session_client, session_user):
+    tab_a = login(session_client, session_user)
+    tab_b = csrf_headers(session_client)
+
+    assert tab_b["X-CSRF-Token"] == tab_a["X-CSRF-Token"]
+    assert session_client.post("/login-write-test", headers=tab_a).status_code == 200
+    assert session_client.post("/login-write-test", headers=tab_b).status_code == 200
