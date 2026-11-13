@@ -1,11 +1,13 @@
 """Ponto de entrada da API: cria o app, registra routers e handlers de erro."""
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.controllers import auth_controller, health_controller, user_controller
 from app.core.config import Settings, get_settings
@@ -21,7 +23,9 @@ from app.core.exceptions import (
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
+from app.dependencies import get_storage
 from app.schemas.error import ValidationErrorRead, ValidationIssue, error_response
+from app.services.storage import create_storage
 
 API_PREFIX = "/api"
 
@@ -128,6 +132,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(health_controller.router, prefix=API_PREFIX)
     app.include_router(auth_controller.router, prefix=API_PREFIX)
     app.include_router(user_controller.router, prefix=API_PREFIX)
+    app.dependency_overrides[get_storage] = lambda: create_storage(settings)
+    if settings.storage_backend == "local":
+        media_root = Path(__file__).resolve().parents[1] / "media"
+        media_root.mkdir(parents=True, exist_ok=True)
+        app.mount(f"{API_PREFIX}/media", StaticFiles(directory=media_root), name="media")
     return app
 
 
