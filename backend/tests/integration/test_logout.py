@@ -224,3 +224,18 @@ def test_logout_openapi_describes_responses(logout_client):
 
     assert {"204", "403"} <= set(operation["responses"])
     assert "content" not in operation["responses"]["204"]
+
+
+def test_logout_of_removed_user_clears_cookies_without_revoking(
+    logout_client, logout_settings, logout_user, db_session
+):
+    headers = login(logout_client, logout_user)
+    db_session.delete(logout_user)
+    db_session.commit()
+
+    response = logout_client.post(LOGOUT_URL, headers=headers)
+
+    assert response.status_code == 204
+    assert revoked_count(db_session) == 0
+    assert name(logout_settings, "access_token") not in logout_client.cookies
+    assert name(logout_settings, "csrf_token") not in logout_client.cookies

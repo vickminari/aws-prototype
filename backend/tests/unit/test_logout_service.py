@@ -2,11 +2,11 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import InvalidTokenError
-from app.models import RevokedToken
+from app.models import RevokedToken, User
 from app.services import auth_service
 
 
@@ -98,5 +98,22 @@ def test_logout_keeps_other_sessions_of_the_same_user(db_session, user, expires_
 def test_logout_with_malformed_subject_raises_invalid_token(db_session, expires_at, subject):
     with pytest.raises(InvalidTokenError):
         auth_service.logout(db_session, subject, str(uuid4()), expires_at)
+
+    assert revoked_count(db_session) == 0
+
+
+def test_logout_for_unknown_user_does_not_fail_or_revoke(db_session, expires_at):
+    auth_service.logout(db_session, str(uuid4()), str(uuid4()), expires_at)
+
+    assert revoked_count(db_session) == 0
+
+
+def test_logout_tolerates_user_removed_by_another_session(db_session, engine, user, expires_at):
+    """O usuário ainda está no identity map, mas foi apagado: a FK falha sem virar 500."""
+    with Session(engine) as other:
+        other.execute(delete(User).where(User.id == user.id))
+        other.commit()
+
+    auth_service.logout(db_session, str(user.id), str(uuid4()), expires_at)
 
     assert revoked_count(db_session) == 0
