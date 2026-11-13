@@ -3,12 +3,17 @@ from uuid import UUID, uuid4
 import jwt
 import pytest
 from fastapi import Depends
+from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from app.dependencies import require_csrf
+from app.models import RevokedToken
 from app.services import auth_service
 from tests.integration.session_support import (
     LOGIN_URL,
+    ME_URL,
     PASSWORD,
+    SESSION_ORIGIN,
     cookie_name,
     csrf_headers,
     login,
@@ -239,3 +244,28 @@ def test_authenticated_csrf_token_is_stable_across_tabs(session_client, session_
     assert tab_b["X-CSRF-Token"] == tab_a["X-CSRF-Token"]
     assert session_client.post("/login-write-test", headers=tab_a).status_code == 200
     assert session_client.post("/login-write-test", headers=tab_b).status_code == 200
+
+
+@pytest.mark.parametrize("same_user", [True, False])
+def test_new_login_revokes_previous_session_of_the_browser(
+    session_client, session_settings, session_user, user_factory, db_session, same_user
+):
+    login(session_client, session_user)
+    name = cookie_name(session_settings)
+    old_token = session_client.cookies[name]
+    old_jti = jwt.decode(old_token, session_settings.jwt_secret, algorithms=["HS256"])["jti"]
+    next_user = session_user if same_user else user_factory(username="joao", email="j@x.com")
+
+    login(session_client, next_user)
+
+    assert db_session.get(RevokedToken, old_jti) is not None
+    assert session_client.get(ME_URL).json()["id"] == str(next_user.id)
+    copy = TestClient(session_client.app, base_url=SESSION_ORIGIN)
+    put_cookie(copy, name, old_token)
+    assert copy.get(ME_URL).status_code == 401
+
+
+def test_first_login_does_not_revoke_anything(session_client, session_user, db_session):
+    login(session_client, session_user)
+
+    assert db_session.scalar(select(func.count()).select_from(RevokedToken)) == 0
