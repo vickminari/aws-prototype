@@ -4,14 +4,13 @@
 isolados podem substituí-lo com
 `app.dependency_overrides[get_current_user] = lambda: usuario_de_fixture`.
 
-`get_storage` é **stub** (ARQ §1.3); a implementação real é da issue #11.
+`get_storage` cria o storage configurado (local ou S3, issue #11).
 
 `get_db` é real (issue #5); nos testes a fixture `app` do `conftest.py` o substitui por
 uma sessão SQLite em memória.
 """
 
 from collections.abc import Iterator
-from typing import NoReturn
 
 from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyCookie
@@ -25,6 +24,7 @@ from app.core.exceptions import InvalidTokenError
 from app.core.security import decode_access_token
 from app.models import User
 from app.services import auth_service
+from app.services.storage import StorageService, create_storage
 
 # Só documenta o esquema no OpenAPI: o nome real depende do ambiente e é lido
 # por read_auth_cookie. auto_error=False mantém o formato padrão de erro 401.
@@ -72,10 +72,8 @@ def get_current_user(
     return auth_service.get_session_user(db, claims["sub"], claims["jti"])
 
 
-def get_storage() -> NoReturn:
-    """Stub: o `StorageService` (local/S3) é implementado na issue #11.
+def get_storage() -> StorageService:
+    """Cria o backend de storage configurado para a aplicação."""
+    from app.core.config import get_settings
 
-    Raises:
-        NotImplementedError: sempre; use `dependency_overrides` nos testes.
-    """
-    raise NotImplementedError("StorageService ainda não implementado (issue #11)")
+    return create_storage(get_settings())
