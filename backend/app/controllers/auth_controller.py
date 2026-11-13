@@ -33,7 +33,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     description=(
         "Requer pré-sessão/cookie CSRF e X-CSRF-Token de /api/auth/csrf, além de origem confiável. "
         "Recebe formulário username/password, define cookies, descarta a pré-sessão e renova CSRF. "
-        "Após o login, consulte /api/auth/csrf para obter o novo token público. Não retorna JWT."
+        "Após o login, consulte /api/auth/csrf para obter o novo token público. Não retorna JWT. "
+        "Se o navegador já tinha sessão, ela é revogada."
     ),
     responses={
         401: error_response("Credenciais inválidas ou usuário inativo", InvalidCredentialsError),
@@ -42,13 +43,14 @@ router = APIRouter(prefix="/auth", tags=["auth"])
     },
 )
 def login(
+    request: Request,
     response: Response,
     form: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ) -> LoginResponse:
     user = auth_service.authenticate(db, form.username, form.password)
-    establish_login(response, user.id, settings)
+    establish_login(request, response, db, user.id, settings)
     return LoginResponse()
 
 

@@ -13,8 +13,24 @@ from app.core.security import create_access_token, decode_access_token
 from app.services import auth_service
 
 
-def establish_login(response: Response, user_id: UUID, settings: Settings) -> None:
-    """Define JWT HttpOnly e renova CSRF, descartando a pré-sessão anterior."""
+def _revoke_current_session(request: Request, db: Session, settings: Settings) -> None:
+    """Revoga o JWT do cookie, se houver; `require_csrf` já recusou um JWT inválido."""
+    token = read_auth_cookie(request, settings)
+    if token:
+        claims = decode_access_token(token, settings=settings)
+        expires_at = datetime.fromtimestamp(claims["exp"], UTC)
+        auth_service.logout(db, claims["sub"], claims["jti"], expires_at)
+
+
+def establish_login(
+    request: Request, response: Response, db: Session, user_id: UUID, settings: Settings
+) -> None:
+    """Define JWT HttpOnly e renova CSRF, descartando a pré-sessão anterior.
+
+    Um login no navegador que já tinha sessão (novo login ou troca de conta) revoga a
+    sessão anterior, para que cópias do cookie antigo deixem de valer.
+    """
+    _revoke_current_session(request, db, settings)
     token = create_access_token(user_id, settings=settings)
     claims = decode_access_token(token, settings=settings)
     set_auth_cookie(response, token, settings)
@@ -27,11 +43,7 @@ def end_session(request: Request, response: Response, db: Session, settings: Set
     Deve rodar após `require_csrf`, que já recusa um JWT inválido presente no cookie.
     Sem JWT (somente pré-sessão) não há o que revogar; os cookies são limpos igualmente.
     """
-    token = read_auth_cookie(request, settings)
-    if token:
-        claims = decode_access_token(token, settings=settings)
-        expires_at = datetime.fromtimestamp(claims["exp"], UTC)
-        auth_service.logout(db, claims["sub"], claims["jti"], expires_at)
+    _revoke_current_session(request, db, settings)
     clear_auth_cookie(response, settings)
     clear_csrf_cookies(response, settings)
     response.headers["Cache-Control"] = "no-store"

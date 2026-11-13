@@ -310,7 +310,8 @@ Fluxo de login para o frontend (#12):
    então uma conta não consegue capturar o login de outra.
 3. Sucesso: 200 com `{"detail":"Login realizado"}`, `Cache-Control: no-store`,
    cookie JWT HttpOnly e cookie CSRF renovado. A pré-sessão é removida; o JWT
-   nunca aparece no JSON. Credenciais incorretas e usuário inativo retornam 401
+   nunca aparece no JSON. Se o navegador já tinha sessão (novo login ou troca de
+   conta), o `jti` anterior é revogado. Credenciais incorretas e usuário inativo retornam 401
    com a mesma mensagem; erro de origem/CSRF retorna 403; formulário inválido, 422.
 4. Busque novamente `/api/auth/csrf` para ler o novo token CSRF vinculado ao `jti`.
    O token antigo não autoriza escritas, mesmo restaurando os cookies da pré-sessão.
