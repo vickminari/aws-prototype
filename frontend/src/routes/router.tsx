@@ -5,19 +5,31 @@ import { LoginPage } from '../pages/LoginPage.tsx'
 import { NotFoundPage } from '../pages/NotFoundPage.tsx'
 import { ProfilePage } from '../pages/ProfilePage.tsx'
 import { RegisterPage } from '../pages/RegisterPage.tsx'
+import { ProtectedRoute } from './ProtectedRoute.tsx'
+import { PublicOnlyRoute } from './PublicOnlyRoute.tsx'
 
 /**
  * Rotas da ARQ §7.3. Exportadas à parte para os testes montarem com `createMemoryRouter`.
- * `ProtectedRoute`/`PublicOnlyRoute` e o redirecionamento de `/` conforme a sessão entram na #12;
- * o `DashboardLayout`, na #14.
+ * O `DashboardLayout` entra na #14.
  */
 export const routes: RouteObject[] = [
-  { path: '/', element: <Navigate to="/dashboard" replace /> },
-  { path: '/login', element: <LoginPage /> },
-  { path: '/register', element: <RegisterPage /> },
-  { path: '/dashboard', element: <DashboardHomePage /> },
-  { path: '/dashboard/profile', element: <ProfilePage /> },
-  { path: '/dashboard/password', element: <ChangePasswordPage /> },
+  {
+    element: <PublicOnlyRoute />,
+    children: [
+      { path: '/login', element: <LoginPage /> },
+      { path: '/register', element: <RegisterPage /> },
+    ],
+  },
+  {
+    element: <ProtectedRoute />,
+    children: [
+      // Sem sessão, o ProtectedRoute leva para /login; com sessão, vai para o dashboard.
+      { path: '/', element: <Navigate to="/dashboard" replace /> },
+      { path: '/dashboard', element: <DashboardHomePage /> },
+      { path: '/dashboard/profile', element: <ProfilePage /> },
+      { path: '/dashboard/password', element: <ChangePasswordPage /> },
+    ],
+  },
   { path: '*', element: <NotFoundPage /> },
 ]
 
