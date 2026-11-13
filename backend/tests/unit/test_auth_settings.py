@@ -83,3 +83,30 @@ def test_auth_settings_requires_explicit_https_origins_in_production(production_
 def test_auth_settings_rejects_urls_that_are_not_origins(production_config, origin):
     with pytest.raises(ValidationError):
         Settings(_env_file=None, **(production_config | {"csrf_trusted_origins": [origin]}))
+
+
+def test_dev_without_trusted_origins_accepts_local_frontend(monkeypatch):
+    """`docker compose up` sem backend/.env sobe em dev; cadastro e login devem funcionar."""
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.environment == "dev"
+    assert settings.csrf_trusted_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+
+def test_dev_keeps_explicit_trusted_origins(monkeypatch):
+    monkeypatch.setenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000")
+
+    settings = Settings(_env_file=None, environment="dev")
+
+    assert settings.csrf_trusted_origins == ["http://localhost:3000"]
+
+
+@pytest.mark.parametrize("environment", ["test", "prod"])
+def test_local_origins_are_never_implicit_outside_dev(environment, production_config):
+    if environment == "test":
+        assert Settings(_env_file=None, environment="test").csrf_trusted_origins == []
+        return
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **(production_config | {"csrf_trusted_origins": []}))
