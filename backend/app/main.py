@@ -112,7 +112,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url=f"{API_PREFIX}/openapi.json",
         redoc_url=None,
         # CSRF por padrão: toda escrita (POST/PUT/PATCH/DELETE), inclusive rotas futuras,
-        # exige origem confiável e X-CSRF-Token. Roda antes da autenticação e do corpo.
+        # exige origem confiável e X-CSRF-Token. Roda antes da autenticação e do handler;
+        # o FastAPI já leu e validou o corpo, mas nada é executado sem CSRF válido.
         dependencies=[Depends(require_csrf)],
         responses={
             500: error_response(

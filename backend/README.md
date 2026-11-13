@@ -322,9 +322,12 @@ escritas.
 
 `create_app` registra `require_csrf` como dependência global: toda rota de escrita
 (`POST`, `PUT`, `PATCH`, `DELETE`), inclusive as que forem criadas depois, exige
-origem confiável e `X-CSRF-Token` antes da autenticação e da leitura do corpo.
+origem confiável e `X-CSRF-Token` antes da autenticação e da execução da rota.
 Isso cobre cadastro, login, logout, perfil, senha e upload/remoção de avatar.
 Leituras (`GET`, `HEAD`, `OPTIONS`) não são afetadas e não devem alterar dados.
+O FastAPI lê e valida o corpo antes das dependências: JSON malformado de outra
+origem recebe 422 em vez de 403, e um upload é lido antes da recusa. Nenhuma
+operação é executada sem CSRF válido; validar antes do corpo exigiria middleware.
 O OpenAPI documenta o 403 `CSRF_INVALID` em cada escrita, e
 `tests/integration/test_write_protection.py` verifica todas as escritas listadas
 no OpenAPI, falhando se uma nova rota escapar da proteção.
