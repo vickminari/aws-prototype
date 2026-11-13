@@ -10,6 +10,7 @@ from app.core.config import Settings
 from app.core.csrf import (
     MAX_CSRF_TOKEN_LENGTH,
     create_csrf_token,
+    csrf_token_remaining,
     verify_csrf_token,
 )
 from app.core.exceptions import InvalidCsrfTokenError, InvalidTokenError
@@ -71,12 +72,16 @@ def issue_csrf_token(request: Request, response: Response, settings: Settings) -
         clear_auth_cookie(response, settings)
         binding = None
     if binding is not None:
-        return _issue_authenticated_csrf(response, binding, settings)
+        return _issue_authenticated_csrf(response, binding, settings, request)
     session = request.cookies.get(csrf_cookie_name("csrf_session", settings), "")
     lifetime = settings.csrf_expire_minutes * 60
-    if not verify_csrf_token(session, _PRE_SESSION_CONTEXT, settings.csrf_secret):
+    if not _is_fresh(session, _PRE_SESSION_CONTEXT, settings):
+        # Renova a pré-sessão na segunda metade da validade, em vez de prolongá-la: a
+        # expiração assinada continua limitando cada pré-sessão.
         session = create_csrf_token(_PRE_SESSION_CONTEXT, settings.csrf_secret, expires_in=lifetime)
-    token = create_csrf_token(f"pre:{session}", settings.csrf_secret, expires_in=lifetime)
+    token = _current_or_new_token(
+        request, f"pre:{session}", settings, max_lifetime=csrf_token_remaining(session)
+    )
     for name, value in (("csrf_session", session), ("csrf_token", token)):
         response.set_cookie(
             key=csrf_cookie_name(name, settings),
@@ -117,10 +122,40 @@ def clear_csrf_cookies(response: Response, settings: Settings) -> None:
         _clear_csrf_cookie(response, name, settings)
 
 
-def _issue_authenticated_csrf(response: Response, binding: str, settings: Settings) -> str:
-    """Descarta a pré-sessão e emite um novo token ligado à sessão autenticada."""
+def _is_fresh(token: str, binding: str, settings: Settings) -> bool:
+    """Válido para o vínculo e com ao menos metade da validade configurada pela frente."""
+    return verify_csrf_token(token, binding, settings.csrf_secret) and (
+        csrf_token_remaining(token) * 2 >= settings.csrf_expire_minutes * 60
+    )
+
+
+def _current_or_new_token(
+    request: Request | None, binding: str, settings: Settings, *, max_lifetime: int | None = None
+) -> str:
+    """Reaproveita o token do cookie enquanto estiver fresco para o mesmo vínculo.
+
+    Assim um GET de outra aba (ou uma navegação vinda de outro site) não invalida o token
+    que uma aba já mantém em memória. Um token novo nunca vence depois do vínculo.
+    """
+    if request is not None:
+        current = request.cookies.get(csrf_cookie_name("csrf_token", settings), "")
+        if _is_fresh(current, binding, settings):
+            return current
     lifetime = settings.csrf_expire_minutes * 60
-    token = create_csrf_token(binding, settings.csrf_secret, expires_in=lifetime)
+    if max_lifetime is not None:
+        lifetime = min(lifetime, max_lifetime)
+    return create_csrf_token(binding, settings.csrf_secret, expires_in=lifetime)
+
+
+def _issue_authenticated_csrf(
+    response: Response, binding: str, settings: Settings, request: Request | None = None
+) -> str:
+    """Descarta a pré-sessão e entrega o token ligado à sessão autenticada.
+
+    Sem `request` (rotação no login), sempre emite um token novo.
+    """
+    lifetime = settings.csrf_expire_minutes * 60
+    token = _current_or_new_token(request, binding, settings)
     _clear_csrf_cookie(response, "csrf_session", settings)
     response.set_cookie(
         key=csrf_cookie_name("csrf_token", settings),

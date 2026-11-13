@@ -286,7 +286,14 @@ Envie o token retornado em `X-CSRF-Token`; ele é público e distinto do JWT.
 `core/csrf.py` usa HMAC-SHA256, nonce aleatório, vínculo com a sessão e expiração.
 O prazo padrão de 60 minutos afeta CSRF/pré-sessão, não renova nem revoga JWTs.
 A pré-sessão tem expiração assinada própria: recarregar o endpoint não prolonga
-indefinidamente a mesma pré-sessão. Se expirar, obtenha novo token pelo endpoint.
+indefinidamente a mesma pré-sessão. Na segunda metade da validade, o endpoint cria
+outra pré-sessão, e nenhum token vence depois da pré-sessão a que está vinculado.
+
+Enquanto o token do cookie for válido para a sessão atual e tiver ao menos metade da
+validade pela frente, `GET /api/auth/csrf` devolve o mesmo token. Assim, várias abas
+(que compartilham cookies) e navegações vindas de outro site não invalidam o token
+que uma aba já guarda em memória. Perto do vencimento, o endpoint emite outro; se uma
+escrita receber 403 `CSRF_INVALID`, busque novo token e repita uma vez.
 
 `require_csrf` valida primeiro `Origin` ou, apenas quando ausente, a origem do
 `Referer`. Depois exige cookie/header iguais e assinatura válida vinculada à

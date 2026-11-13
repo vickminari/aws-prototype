@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from app.core.csrf import create_csrf_token, verify_csrf_token
+from app.core.csrf import create_csrf_token, csrf_token_remaining, verify_csrf_token
 
 SECRET = "csrf-exclusivo-dos-testes-00000000000000"
 SESSION = "identificador-aleatorio-de-pre-sessao"
@@ -56,3 +56,18 @@ def test_csrf_token_does_not_cross_session_rotation():
 
     assert verify_csrf_token(old_token, "jti-da-sessao-autenticada", SECRET) is False
     assert verify_csrf_token(new_token, "pre-sessao", SECRET) is False
+
+
+def test_csrf_token_remaining_reports_seconds_until_expiry(monkeypatch):
+    now = 1800000000
+    monkeypatch.setattr(time, "time", lambda: now)
+    token = create_csrf_token(SESSION, SECRET, expires_in=120)
+
+    assert csrf_token_remaining(token) == 120
+    monkeypatch.setattr(time, "time", lambda: now + 200)
+    assert csrf_token_remaining(token) == 0
+
+
+@pytest.mark.parametrize("token", ["", "nao-e-token", None, "v1.abc.def.ghi"])
+def test_csrf_token_remaining_is_zero_for_malformed_values(token):
+    assert csrf_token_remaining(token) == 0

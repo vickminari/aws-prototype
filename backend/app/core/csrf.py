@@ -30,6 +30,17 @@ def create_csrf_token(session_id: str, secret: str, *, expires_in: int = CSRF_TT
     return f"{payload}.{_signature(payload, session_id, secret)}"
 
 
+def csrf_token_remaining(token: str) -> int:
+    """Segundos até a expiração declarada no token; 0 se malformado ou vencido.
+
+    Não verifica a assinatura: use somente depois de `verify_csrf_token`.
+    """
+    match = _TOKEN_PATTERN.fullmatch(token) if isinstance(token, str) else None
+    if match is None:
+        return 0
+    return max(0, int(match[1]) - int(time.time()))
+
+
 def verify_csrf_token(token: str, session_id: str, secret: str) -> bool:
     """Rejeita assinatura, sessão, formato ou expiração inválidos sem lançar erro."""
     if (
