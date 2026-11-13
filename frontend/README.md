@@ -59,17 +59,17 @@ src/
 ├── App.tsx               Providers globais + router
 ├── index.css             Entrada do Tailwind
 ├── routes/               router.tsx (rotas), ProtectedRoute e PublicOnlyRoute
-├── pages/                Uma página por rota (hoje placeholders)
-├── layouts/              DashboardLayout: sidebar + topbar + <Outlet/> (#14)
+├── pages/                Uma página por rota (login e cadastro prontos; as demais são placeholders)
+├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (#14)
 ├── components/ui/        Componentes visuais base: Button, Input, Card, Spinner, Avatar
-├── components/forms/     Componentes de formulário, ex.: FormField (#13)
+├── components/forms/     FormField: label, ajuda e erro para controles que não são o Input
 ├── contexts/             AuthContext.tsx (AuthProvider: mantém a sessão)
 ├── hooks/                useAuth (hook, tipo e contexto da sessão)
 ├── services/             Chamadas HTTP: api.ts (axios + CSRF + 401), authService, userService
-├── schemas/              Schemas Zod dos formulários (#13)
+├── schemas/              Schemas Zod dos formulários (authSchemas.ts)
 ├── types/                Tipos espelhando os schemas da API (user.ts)
-├── utils/                Funções puras, ex.: formatDate (#14)
-└── test/                 Configuração e utilitários dos testes (setup.ts, auth.ts)
+├── utils/                Funções puras: apiError.ts (lê erros da API); formatDate (#14)
+└── test/                 Configuração e utilitários dos testes (setup.ts, auth.ts, apiError.ts)
 ```
 
 ### Rotas (ARQ §7.3)
@@ -120,7 +120,22 @@ await logout() // só limpa a sessão se o servidor confirmar; erro de rede é r
 
 Toasts: `import { toast } from 'sonner'` e `toast.success('...')` / `toast.error('...')`. O `<Toaster />` já está no `App.tsx`.
 
-Em testes, simule a sessão com o `AuthContext` e o `makeAuthValue` de [`src/test/auth.ts`](src/test/auth.ts) (exemplo em [`ProtectedRoute.test.tsx`](src/routes/ProtectedRoute.test.tsx)).
+Em testes, simule a sessão com o `AuthContext` e o `makeAuthValue` de [`src/test/auth.ts`](src/test/auth.ts) (exemplo em [`ProtectedRoute.test.tsx`](src/routes/ProtectedRoute.test.tsx)), e erros da API com o `makeApiError` de [`src/test/apiError.ts`](src/test/apiError.ts).
+
+## Formulários
+
+Padrão usado no login e no cadastro, e o modelo para perfil (#15) e senha (#16): **React Hook Form + Zod** (ARQ §7.1).
+
+1. **Schema** em `src/schemas/`, com as mesmas regras do backend (ARQ §5.5). Exemplo: [`authSchemas.ts`](src/schemas/authSchemas.ts).
+2. **`useForm`** com `zodResolver(schema)` e `defaultValues`. Use `noValidate` no `<form>`, para as mensagens do Zod substituírem as do navegador.
+3. **Campos:** `<Input label=... error={errors.campo?.message} {...register('campo')} />`. Para textarea e outros controles, use o `FormField`.
+4. **Envio:** `<Button type="submit" isLoading={isSubmitting}>`. O botão fica desabilitado com spinner durante o envio.
+5. **Erros da API** com [`utils/apiError.ts`](src/utils/apiError.ts):
+   - `getApiError(error)` → `{ status, code, detail }`. Um 409 vai para o campo com `setError('email', { message: detail })`.
+   - `getValidationErrors(error)` → erros por campo de um 422.
+   - Outros erros: `toast.error('...')`.
+
+Exemplos completos: [`LoginPage.tsx`](src/pages/LoginPage.tsx) e [`RegisterPage.tsx`](src/pages/RegisterPage.tsx), com seus testes.
 
 ## Boas práticas (ARQ §7.6), checklist antes do PR
 
