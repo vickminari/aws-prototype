@@ -115,3 +115,19 @@ def test_change_password_updates_hash_and_returns_no_content(csrf_client, auth_u
     assert response.status_code == 204
     assert response.content == b""
     assert verify_password(new_password, auth_user.hashed_password)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"username": "vitima@example.com"}, {"email": "vitima"}, {"username": None}],
+)
+def test_patch_me_rejects_identity_that_could_collide_on_login(
+    csrf_client, auth_user, db_session, payload
+):
+    original = (auth_user.username, auth_user.email)
+
+    response = csrf_client.patch("/api/users/me", json=payload)
+
+    assert response.status_code == 422
+    db_session.refresh(auth_user)
+    assert (auth_user.username, auth_user.email) == original

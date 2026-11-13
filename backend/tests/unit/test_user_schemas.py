@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.user import UserCreate, UserRead
+from app.schemas.user import UserCreate, UserRead, UserUpdate
 
 
 @pytest.fixture
@@ -130,3 +130,31 @@ def test_user_read_from_attributes_serializes_only_public_fields(profile_image_u
     }
     assert user.password not in result.model_dump_json()
     assert user.hashed_password not in result.model_dump_json()
+
+
+@pytest.mark.parametrize(
+    "username", ["maria@example.com", "maria silva", "ma", "a" * 31, "maria-silva", None]
+)
+def test_user_update_rejects_username_outside_registration_rules(username):
+    with pytest.raises(ValidationError) as error:
+        UserUpdate(username=username)
+
+    assert error.value.errors()[0]["loc"] == ("username",)
+
+
+@pytest.mark.parametrize("email", ["sem-arroba", "dona", "a@" + "b" * 250 + ".com", None])
+def test_user_update_rejects_invalid_email(email):
+    with pytest.raises(ValidationError) as error:
+        UserUpdate(email=email)
+
+    assert error.value.errors()[0]["loc"] == ("email",)
+
+
+def test_user_update_accepts_partial_valid_identity():
+    update = UserUpdate(username="Maria.Silva_2", email="maria@example.com")
+
+    assert update.model_dump(exclude_unset=True) == {
+        "username": "Maria.Silva_2",
+        "email": "maria@example.com",
+    }
+    assert UserUpdate().model_dump(exclude_unset=True) == {}

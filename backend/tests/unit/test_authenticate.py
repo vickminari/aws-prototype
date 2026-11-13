@@ -108,3 +108,23 @@ def test_authenticate_with_unknown_user_still_verifies_a_hash(db_session, monkey
     assert verifications[0][0] == PASSWORD
     assert verifications[0][1] != PASSWORD
     assert db_session.scalar(select(func.count()).select_from(User)) == 0
+
+
+def test_identifier_with_at_sign_matches_only_email(db_session, user_factory):
+    """Um username igual ao email de outra conta não pode capturar o login pelo email."""
+    owner = user_factory(username="dona", email="dona@example.com", password=PASSWORD)
+    user_factory(username="dona@example.com", email="intrusa@example.com", password="Outra-123")
+
+    assert auth_service.authenticate(db_session, "dona@example.com", PASSWORD).id == owner.id
+    with pytest.raises(InvalidCredentialsError):
+        auth_service.authenticate(db_session, "dona@example.com", "Outra-123")
+
+
+def test_identifier_without_at_sign_matches_only_username(db_session, user_factory):
+    """Um email igual ao username de outra conta não pode capturar o login pelo username."""
+    owner = user_factory(username="dona", email="dona@example.com", password=PASSWORD)
+    user_factory(username="intrusa", email="dona", password="Outra-123")
+
+    assert auth_service.authenticate(db_session, "dona", PASSWORD).id == owner.id
+    with pytest.raises(InvalidCredentialsError):
+        auth_service.authenticate(db_session, "dona", "Outra-123")
