@@ -54,15 +54,26 @@ Os testes não precisam de PostgreSQL: usam SQLite em memória, recriado a cada 
 | `engine` | SQLite em memória (`StaticPool`, chaves estrangeiras ligadas) com as tabelas criadas |
 | `db_session` | `Session` do SQLAlchemy; use para criar dados e conferir o que foi gravado |
 | `app` | app FastAPI com `get_db` apontando para a `db_session` do teste |
-| `client` | `TestClient(app)` |
+| `client` | `TestClient(app)` sem CSRF: leituras e testes de rejeição de escrita |
+| `csrf_client` | cliente com pré-sessão CSRF; envia `Origin` e `X-CSRF-Token` em toda requisição. Use no cadastro e em escritas com `auth_user` |
+| `logged_user` / `logged_client` | login real (cookie HttpOnly) com CSRF renovado e vinculado ao `jti`; para testes de ponta a ponta |
 | `user_factory` | `user_factory(username="maria", password="Outra-123")` cria e salva um usuário; campos omitidos recebem valores válidos e únicos. Senha padrão: `DEFAULT_PASSWORD` |
-| `auth_user` | usuário criado e devolvido por `get_current_user` em todas as rotas (sem login) |
+| `auth_user` | usuário criado e devolvido por `get_current_user` em todas as rotas (sem login); não combine com `logged_client` |
+
+O app de teste confia somente na origem `http://testserver` (a do `TestClient`).
+Toda escrita exige CSRF: um POST/PUT/PATCH/DELETE com `client` recebe 403.
 
 ```python
 def test_read_me_returns_logged_user(client, auth_user):
     response = client.get("/api/users/me")
 
     assert response.json()["username"] == auth_user.username
+
+
+def test_patch_me_with_real_session(logged_client):
+    response = logged_client.patch("/api/users/me", json={"full_name": "Novo nome"})
+
+    assert response.status_code == 200
 ```
 
 ## Estrutura de camadas (MVC + Service)
@@ -89,7 +100,7 @@ Services lançam exceções de `app/core/exceptions.py`; o handler global em `ma
 | Exceção | HTTP |
 |---|---|
 | `EmailAlreadyExistsError`, `UsernameAlreadyExistsError` | 409 |
-| `InvalidCredentialsError`, `InvalidTokenError` | 401 (com `WWW-Authenticate: Bearer`) |
+| `InvalidCredentialsError`, `InvalidTokenError` | 401 (com `WWW-Authenticate: Cookie realm="api"`) |
 | `WrongPasswordError` | 400 |
 | `InvalidImageError` | 422 |
 | `NotFoundError` | 404 |
@@ -102,9 +113,10 @@ Nunca use `HTTPException` em services.
 ### Usuário autenticado nos testes
 
 `get_current_user` autentica pelo cookie HttpOnly do login (ver
-[Login, logout, cookies e CSRF](#login-logout-cookies-e-csrf-issue-9-etapas-2-a-6)). Para testar uma rota
+[Login, logout, cookies e CSRF](#login-logout-cookies-e-csrf-issue-9)). Para testar uma rota
 protegida sem passar pelo login, use a fixture `auth_user`
-(ver [Fixtures](#fixtures-testsconftestpy)), que faz:
+(ver [Fixtures](#fixtures-testsconftestpy)), que faz o override abaixo; em escritas,
+combine-a com `csrf_client`:
 
 ```python
 app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
@@ -243,7 +255,7 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
-### Login, logout, cookies e CSRF (issue #9, etapas 2 a 6)
+### Login, logout, cookies e CSRF (issue #9)
 
 `controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
 `access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
@@ -295,7 +307,16 @@ Fluxo de login para o frontend (#12):
 
 O bootstrap com JWT expirado/adulterado remove o cookie de acesso inválido e
 permite obter pré-sessão para novo login. Isso não autentica usuário nem autoriza
-escritas. A proteção CSRF de cadastro e perfil entra na integração da etapa 7.
+escritas.
+
+`create_app` registra `require_csrf` como dependência global: toda rota de escrita
+(`POST`, `PUT`, `PATCH`, `DELETE`), inclusive as que forem criadas depois, exige
+origem confiável e `X-CSRF-Token` antes da autenticação e da leitura do corpo.
+Isso cobre cadastro, login, logout, perfil, senha e upload/remoção de avatar.
+Leituras (`GET`, `HEAD`, `OPTIONS`) não são afetadas e não devem alterar dados.
+O OpenAPI documenta o 403 `CSRF_INVALID` em cada escrita, e
+`tests/integration/test_write_protection.py` verifica todas as escritas listadas
+no OpenAPI, falhando se uma nova rota escapar da proteção.
 
 Rotas protegidas usam `get_current_user`, que lê somente o cookie de acesso do
 ambiente atual, valida o JWT e chama `auth_service.get_session_user`. Esse service
@@ -304,8 +325,10 @@ exige `sub` com o UUID canônico emitido no login, rejeita `jti` presente em
 ausente, retorna 401 com `INVALID_TOKEN`, nunca 500. Não há fallback para
 `Authorization: Bearer`, nem para o nome de cookie do outro ambiente. O OpenAPI
 descreve o esquema `CookieAuth` (`apiKey` em cookie); após o login no próprio
-Swagger, o navegador envia o cookie automaticamente. A revisão do header
-`WWW-Authenticate: Bearer` nas respostas 401 fica para a etapa 7.
+Swagger, o navegador envia o cookie automaticamente. Respostas 401 trazem
+`WWW-Authenticate: Cookie realm="api"`: a RFC 9110 exige um desafio, e anunciar
+`Bearer` induziria clientes a usar um mecanismo que a API não aceita. As escritas
+pelo Swagger também exigem `X-CSRF-Token`; prefira o frontend ou os testes.
 
 `POST /api/auth/logout` exige origem confiável e `X-CSRF-Token` vinculado à sessão
 (o mesmo fluxo das demais escritas). Não usa `get_current_user`: revoga o `jti` do
@@ -322,7 +345,6 @@ atributos da criação. Responde 204 sem corpo e com `Cache-Control: no-store`.
   logout apenas limpa os cookies, sem violar a chave estrangeira.
 - Uma cópia do JWT revogado recebe 401 nas rotas protegidas; outras sessões do
   mesmo usuário continuam válidas, e um novo login funciona normalmente.
-Por enquanto, apenas o login exige essa dependência entre as rotas da aplicação.
 Não há fallback automático para cookie sem `Secure` em produção.
 
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se

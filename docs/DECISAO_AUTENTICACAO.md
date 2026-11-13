@@ -108,8 +108,11 @@ Na etapa 5, `get_current_user` passou a ler o cookie, validar o JWT, exigir
 com 401 e sem fallback Bearer. Na etapa 6, `POST /api/auth/logout` passou a exigir
 CSRF, revogar o `jti` até a expiração original sem duplicar registros e remover os
 cookies de acesso e CSRF, com 204. Repetir com cookies copiados retorna 204; repetir
-já sem cookies retorna 403 de CSRF. A proteção das escritas de cadastro, perfil e
-avatar entra na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+já sem cookies retorna 403 de CSRF. Na etapa 7, `require_csrf` virou dependência
+global do app: todas as escritas, inclusive cadastro, perfil, senha e avatar (e rotas
+futuras), exigem CSRF. O 401 passou a anunciar `WWW-Authenticate: Cookie realm="api"`
+em vez de `Bearer`. Os testes usam `csrf_client` e `logged_client` (login real),
+substituindo a previsão de `auth_headers`. A #21 deverá provisionar `CSRF_SECRET` e carregar as
 configurações CSRF de produção.
 
 ## Issues impactadas
