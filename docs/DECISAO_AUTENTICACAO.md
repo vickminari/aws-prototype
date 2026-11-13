@@ -91,9 +91,16 @@ testados na #9. Documentar as novas variáveis de ambiente nessa entrega.
 Configuração definida na etapa 2 da #9: `CSRF_SECRET` (segredo separado de
 `JWT_SECRET`, mínimo 32 caracteres, padrão local vedado em produção) e
 `CSRF_TRUSTED_ORIGINS` (origens explícitas separadas por vírgula, obrigatórias
-e HTTPS em produção, independentes de `CORS_ORIGINS`). A configuração não
-substitui a validação das requisições, a implementar na etapa 3. A #21 deverá
-provisionar `CSRF_SECRET` e carregar ambas as variáveis no ambiente de produção.
+e HTTPS em produção, independentes de `CORS_ORIGINS`).
+
+Na etapa 3 foi definido `CSRF_EXPIRE_MINUTES`, positivo e configurável, com
+padrão **60 minutos** para facilitar os testes/demonstração. Expirar CSRF não
+revoga o JWT: o cliente pode obter nova pré-sessão/token pelo endpoint. O núcleo
+usa HMAC-SHA256 e nonce aleatório; o cookie de pré-sessão também é assinado.
+A emissão HTTP e a dependência de validação da pré-sessão estão implementadas.
+O vínculo ao `jti`/rotação no login entra na etapa 4 e a proteção das rotas
+existentes na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+configurações CSRF de produção.
 
 ## Issues impactadas
 

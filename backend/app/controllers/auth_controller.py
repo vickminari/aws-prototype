@@ -1,15 +1,30 @@
 """Rotas de cadastro; autenticação e cookies serão implementados na issue #9."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.orm import Session
 
+from app.controllers.csrf_http import issue_csrf_token
+from app.core.config import Settings, get_settings
 from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
 from app.dependencies import get_db
+from app.schemas.auth import CsrfRead
 from app.schemas.error import ErrorRead, ValidationErrorRead
 from app.schemas.user import UserCreate, UserRead
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get(
+    "/csrf",
+    response_model=CsrfRead,
+    summary="Inicializa a pré-sessão e fornece o token CSRF",
+    description="Retorna token para X-CSRF-Token e cookies HttpOnly, sem realizar login.",
+)
+def csrf(
+    request: Request, response: Response, settings: Settings = Depends(get_settings)
+) -> CsrfRead:
+    return CsrfRead(csrf_token=issue_csrf_token(request, response, settings))
 
 
 @router.post(

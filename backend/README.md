@@ -234,7 +234,7 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
-### Configuração de cookies e CSRF (issue #9, etapa 2)
+### Configuração de cookies e CSRF (issue #9, etapas 2 e 3)
 
 `controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
 `access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
@@ -246,6 +246,7 @@ validam o JWT e ainda não estão ligados a endpoints de login/logout nesta etap
 |---|---|---|
 | `CSRF_SECRET` | Padrão local se omitida | Segredo aleatório exclusivo, mínimo 32 caracteres; não aceita o padrão local |
 | `CSRF_TRUSTED_ORIGINS` | Lista explícita HTTP(S), por exemplo `http://localhost:5173` | Lista explícita HTTPS obrigatória, por exemplo `https://app.example.com` |
+| `CSRF_EXPIRE_MINUTES` | `60`, configurável e positivo | `60`, configurável e positivo |
 
 `CSRF_SECRET` deve ser diferente de `JWT_SECRET`; gere os dois independentemente
 e provisione o novo segredo via Parameter Store na #21. Comprimento mínimo não
@@ -256,9 +257,25 @@ sem credenciais, caminhos, query, fragmento ou curingas. A barra final é removi
 O padrão vazio não autoriza origens. Essa lista é separada de `CORS_ORIGINS`:
 mesmo servindo frontend/API na mesma origem, configure a origem pública em CSRF.
 
-Esta etapa prepara a configuração; a emissão e verificação do token CSRF e a
-proteção das escritas serão implementadas na etapa 3. Não há fallback automático
-para cookie sem `Secure` em produção.
+`GET /api/auth/csrf` inicia/reutiliza uma pré-sessão assinada e retorna
+`{"csrf_token":"..."}` com `Cache-Control: no-store`. Define cookies HttpOnly
+`csrf_session` e `csrf_token` (prefixados com `__Host-` e `Secure` em produção).
+Envie o token retornado em `X-CSRF-Token`; ele é público e distinto do JWT.
+
+`core/csrf.py` usa HMAC-SHA256, nonce aleatório, vínculo com a sessão e expiração.
+O prazo padrão de 60 minutos afeta CSRF/pré-sessão, não renova nem revoga JWTs.
+A pré-sessão tem expiração assinada própria: recarregar o endpoint não prolonga
+indefinidamente a mesma pré-sessão. Se expirar, obtenha novo token pelo endpoint.
+
+`require_csrf` valida primeiro `Origin` ou, apenas quando ausente, a origem do
+`Referer`. Depois exige cookie/header iguais e assinatura válida vinculada à
+pré-sessão. Falhas retornam 403 com `CSRF_INVALID`, antes de executar a escrita.
+
+A dependência está pronta e testada em rota isolada. O vínculo HTTP ao `jti`
+e a rotação após login entram na etapa 4; a aplicação às rotas existentes
+(cadastro e perfil inclusive) e a adaptação de suas fixtures entram na etapa 7.
+Portanto, as escritas existentes ainda não estão protegidas por CSRF nesta etapa.
+Não há fallback automático para cookie sem `Secure` em produção.
 
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com

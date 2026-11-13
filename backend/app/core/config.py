@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     jwt_secret: str = DEV_JWT_SECRET
     jwt_expire_minutes: int = Field(default=60, gt=0)
     csrf_secret: str = Field(default=DEV_CSRF_SECRET, repr=False)
+    csrf_expire_minutes: int = Field(default=60, gt=0)
     csrf_trusted_origins: Annotated[list[str], NoDecode] = []
     storage_backend: Literal["local", "s3"] = "local"
     s3_bucket: str | None = None

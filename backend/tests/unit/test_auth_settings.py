@@ -31,6 +31,18 @@ def test_auth_settings_reads_csrf_secret_and_comma_separated_origins(monkeypatch
     assert settings.csrf_trusted_origins == ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
+def test_auth_settings_reads_configurable_csrf_lifetime(monkeypatch):
+    monkeypatch.setenv("CSRF_EXPIRE_MINUTES", "120")
+
+    assert Settings(_env_file=None).csrf_expire_minutes == 120
+
+
+@pytest.mark.parametrize("minutes", [0, -1])
+def test_auth_settings_rejects_non_positive_csrf_lifetime(minutes):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, csrf_expire_minutes=minutes)
+
+
 def test_auth_settings_accepts_explicit_secure_production_config(production_config):
     settings = Settings(_env_file=None, **production_config)
 

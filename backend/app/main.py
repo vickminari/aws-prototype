@@ -14,6 +14,7 @@ from app.core.exceptions import (
     DomainError,
     EmailAlreadyExistsError,
     InvalidCredentialsError,
+    InvalidCsrfTokenError,
     InvalidImageError,
     InvalidPasswordError,
     InvalidTokenError,
@@ -31,6 +32,7 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     EmailAlreadyExistsError: 409,
     UsernameAlreadyExistsError: 409,
     InvalidCredentialsError: 401,
+    InvalidCsrfTokenError: 403,
     InvalidTokenError: 401,
     WrongPasswordError: 400,
     InvalidPasswordError: 422,
@@ -111,6 +113,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         },
     )
+
+    # Dependências HTTP usam a mesma configuração da instância da aplicação.
+    app.dependency_overrides[get_settings] = lambda: settings
 
     if settings.cors_origins:
         app.add_middleware(

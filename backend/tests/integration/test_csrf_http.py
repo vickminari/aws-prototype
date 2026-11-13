@@ -77,6 +77,46 @@ def test_csrf_endpoint_preserves_pre_session_on_reload(csrf_client):
     assert csrf_client.cookies["csrf_session"] == session
 
 
+def test_csrf_endpoint_replaces_forged_pre_session(csrf_client):
+    csrf_client.cookies.set("csrf_session", "sessao-escolhida-pelo-atacante")
+
+    response = csrf_client.get(CSRF_URL)
+
+    assert response.status_code == 200
+    cookies = SimpleCookie()
+    for header in response.headers.get_list("set-cookie"):
+        cookies.load(header)
+    assert cookies["csrf_session"].value != "sessao-escolhida-pelo-atacante"
+
+
+@pytest.mark.parametrize("environment", ["test", "prod"])
+@pytest.mark.parametrize("minutes", [5, 60])
+def test_csrf_bootstrap_uses_environment_and_configured_lifetime(environment, minutes):
+    settings = Settings(
+        _env_file=None,
+        environment=environment,
+        jwt_secret="jwt-exclusivo-dos-testes-0000000000000000",
+        csrf_secret="csrf-exclusivo-dos-testes-00000000000000",
+        csrf_trusted_origins=["https://app.example.com"],
+        csrf_expire_minutes=minutes,
+    )
+    with TestClient(create_app(settings), base_url="https://app.example.com") as client:
+        response = client.get(CSRF_URL)
+
+    assert response.status_code == 200
+    cookies = SimpleCookie()
+    for header in response.headers.get_list("set-cookie"):
+        cookies.load(header)
+    prefix = "__Host-" if environment == "prod" else ""
+    assert set(cookies) == {prefix + "csrf_session", prefix + "csrf_token"}
+    for cookie in cookies.values():
+        assert bool(cookie["secure"]) is (environment == "prod")
+        assert cookie["httponly"] is True
+        assert cookie["path"] == "/"
+        assert cookie["domain"] == ""
+        assert int(cookie["max-age"]) == minutes * 60
+
+
 @pytest.mark.parametrize(
     "origin_headers",
     [{"Origin": ORIGIN}, {"Referer": ORIGIN + "/login?next=dashboard"}],

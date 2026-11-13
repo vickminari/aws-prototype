@@ -53,6 +53,13 @@ class InvalidTokenError(DomainError):
     message = "Token inválido ou expirado"
 
 
+class InvalidCsrfTokenError(DomainError):
+    """Origem ou token CSRF ausente, adulterado, expirado ou de outra sessão."""
+
+    code = "CSRF_INVALID"
+    message = "Validação CSRF inválida; atualize a sessão e tente novamente"
+
+
 class WrongPasswordError(DomainError):
     """A senha atual informada na troca de senha não confere."""
 

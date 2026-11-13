@@ -14,15 +14,23 @@ uma sessão SQLite em memória.
 from collections.abc import Iterator
 from typing import NoReturn
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.controllers.csrf_http import validate_csrf_request
+from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.exceptions import InvalidTokenError
 
 # auto_error=False: a ausência de token também vira InvalidTokenError (formato padrão de erro)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
+
+
+def require_csrf(request: Request, settings: Settings = Depends(get_settings)) -> None:
+    """Exige origem confiável e token CSRF válido em métodos de escrita."""
+    if request.method not in {"GET", "HEAD", "OPTIONS"}:
+        validate_csrf_request(request, settings)
 
 
 def get_db() -> Iterator[Session]:
