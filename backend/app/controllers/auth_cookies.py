@@ -1,6 +1,6 @@
 """Helpers HTTP do cookie de acesso; não geram nem validam o JWT."""
 
-from fastapi import Response
+from fastapi import Request, Response
 
 from app.core.config import Settings
 
@@ -8,6 +8,11 @@ from app.core.config import Settings
 def auth_cookie_name(settings: Settings) -> str:
     """Seleciona o nome; o prefixo __Host- exige HTTPS em produção."""
     return "__Host-access_token" if settings.environment == "prod" else "access_token"
+
+
+def read_auth_cookie(request: Request, settings: Settings) -> str | None:
+    """Lê somente o cookie do ambiente; nomes de outro ambiente e Bearer são ignorados."""
+    return request.cookies.get(auth_cookie_name(settings))
 
 
 def set_auth_cookie(response: Response, token: str, settings: Settings) -> None:

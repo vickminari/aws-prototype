@@ -200,3 +200,28 @@ def test_cookie_with_name_of_other_environment_is_ignored(auth_client, auth_sett
     use_cookie(auth_client, auth_settings, token, name=other_name)
 
     assert_unauthenticated(auth_client.get(ME_URL))
+
+
+@pytest.mark.parametrize("variant", ["hex", "upper", "braces", "urn"])
+def test_non_canonical_uuid_sub_is_rejected(auth_client, auth_settings, current_user, variant):
+    canonical = str(current_user.id)
+    sub = {
+        "hex": current_user.id.hex,
+        "upper": canonical.upper(),
+        "braces": f"{{{canonical}}}",
+        "urn": f"urn:uuid:{canonical}",
+    }[variant]
+    use_cookie(auth_client, auth_settings, make_token(auth_settings, sub=sub))
+
+    assert_unauthenticated(auth_client.get(ME_URL))
+
+
+def test_openapi_documents_cookie_auth_instead_of_bearer(auth_client):
+    document = auth_client.get("/api/openapi.json").json()
+    schemes = document["components"]["securitySchemes"]
+
+    assert set(schemes) == {"CookieAuth"}
+    assert schemes["CookieAuth"]["type"] == "apiKey"
+    assert schemes["CookieAuth"]["in"] == "cookie"
+    assert schemes["CookieAuth"]["name"] == "access_token"
+    assert document["paths"][ME_URL]["get"]["security"] == [{"CookieAuth": []}]

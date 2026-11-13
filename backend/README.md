@@ -70,7 +70,7 @@ def test_read_me_returns_logged_user(client, auth_user):
 ```
 app/
 ├── main.py              # create_app(): routers, CORS, handlers de erro, docs em /api/docs
-├── dependencies.py      # Depends: get_db, get_current_user e get_storage (stubs até #9 e #11)
+├── dependencies.py      # Depends: get_db, get_current_user (cookie, #9) e get_storage (stub até #11)
 ├── core/                # config.py (env), database.py (engine, SessionLocal, Base), security.py, exceptions.py
 ├── schemas/   (VIEW)    # Pydantic: o que entra e o que sai da API
 ├── controllers/ (CONTROLLER) # routers finos: recebem dependências e chamam UM método de service
@@ -99,10 +99,12 @@ Services lançam exceções de `app/core/exceptions.py`; o handler global em `ma
 
 Nunca use `HTTPException` em services.
 
-### Usuário autenticado nos testes (antes do login existir)
+### Usuário autenticado nos testes
 
-`get_current_user` é um stub que sempre responde 401. Para testar rotas protegidas, use a
-fixture `auth_user` (ver [Fixtures](#fixtures-testsconftestpy)), que faz:
+`get_current_user` autentica pelo cookie HttpOnly do login (ver
+[Login, cookies e CSRF](#login-cookies-e-csrf-issue-9-etapas-2-a-5)). Para testar uma rota
+protegida sem passar pelo login, use a fixture `auth_user`
+(ver [Fixtures](#fixtures-testsconftestpy)), que faz:
 
 ```python
 app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
@@ -225,8 +227,8 @@ de entropia e ser exclusivo desta aplicação. Não reutilize o segredo de desen
 O JWT é assinado, não criptografado: não inclua senhas ou outros segredos no payload.
 
 Essas funções independem do transporte: cookie e header são definidos na camada
-HTTP. A checagem de usuário ativo e de revogação por `jti` pertence à issue #9;
-decodificar um token não basta para autorizar uma requisição.
+HTTP. Decodificar um token não basta para autorizar uma requisição: `get_current_user`
+também consulta a revogação do `jti` e o usuário ativo (ver seção seguinte).
 
 O transporte escolhido para o navegador é **JWT em cookie HttpOnly**.
 O [registro da decisão](../docs/DECISAO_AUTENTICACAO.md) define o contrato futuro
@@ -234,7 +236,7 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
-### Login, cookies e CSRF (issue #9, etapas 2 a 4)
+### Login, cookies e CSRF (issue #9, etapas 2 a 5)
 
 `controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
 `access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
@@ -286,8 +288,17 @@ Fluxo de login para o frontend (#12):
 
 O bootstrap com JWT expirado/adulterado remove o cookie de acesso inválido e
 permite obter pré-sessão para novo login. Isso não autentica usuário nem autoriza
-escritas. A validação completa de usuário ativo/revogação nas rotas entra na
-etapa 5; a proteção CSRF de cadastro e perfil entra na integração da etapa 7.
+escritas. A proteção CSRF de cadastro e perfil entra na integração da etapa 7.
+
+Rotas protegidas usam `get_current_user`, que lê somente o cookie de acesso do
+ambiente atual, valida o JWT e chama `auth_service.get_session_user`. Esse service
+exige `sub` com o UUID canônico emitido no login, rejeita `jti` presente em
+`revoked_tokens` e usuário inexistente ou inativo. Qualquer falha, inclusive cookie
+ausente, retorna 401 com `INVALID_TOKEN`, nunca 500. Não há fallback para
+`Authorization: Bearer`, nem para o nome de cookie do outro ambiente. O OpenAPI
+descreve o esquema `CookieAuth` (`apiKey` em cookie); após o login no próprio
+Swagger, o navegador envia o cookie automaticamente. A revisão do header
+`WWW-Authenticate: Bearer` nas respostas 401 fica para a etapa 7.
 Por enquanto, apenas o login exige essa dependência entre as rotas da aplicação.
 Não há fallback automático para cookie sem `Secure` em produção.
 

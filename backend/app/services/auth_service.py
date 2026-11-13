@@ -1,6 +1,7 @@
 """Regras de cadastro e autenticação, independentes da camada HTTP."""
 
 from secrets import token_urlsafe
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -9,10 +10,11 @@ from sqlalchemy.orm import Session
 from app.core.exceptions import (
     EmailAlreadyExistsError,
     InvalidCredentialsError,
+    InvalidTokenError,
     UsernameAlreadyExistsError,
 )
 from app.core.security import hash_password, verify_password
-from app.models import User
+from app.models import RevokedToken, User
 from app.schemas.user import UserCreate
 
 # Calculado uma vez por processo para verificar uma senha mesmo sem usuário.
@@ -37,6 +39,32 @@ def authenticate(db: Session, identifier: str, password: str) -> User:
     password_matches = verify_password(password, hashed_password)
     if user is None or not password_matches or not user.is_active:
         raise InvalidCredentialsError()
+    return user
+
+
+def get_session_user(db: Session, subject: str, jti: str) -> User:
+    """Resolve o usuário de um JWT já validado, checando revogação e status.
+
+    Args:
+        subject: claim `sub`; deve ser o UUID canônico emitido no login.
+        jti: identificador da sessão, consultado na lista de revogação.
+
+    Raises:
+        InvalidTokenError: se o `sub` for malformado, o `jti` estiver revogado
+            ou o usuário não existir ou estiver inativo.
+    """
+    try:
+        user_id = UUID(subject)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise InvalidTokenError() from exc
+    # Rejeita variações aceitas por UUID() (sem hífens, chaves, urn:) não emitidas por nós.
+    if str(user_id) != subject:
+        raise InvalidTokenError()
+    if db.get(RevokedToken, jti) is not None:
+        raise InvalidTokenError()
+    user = db.get(User, user_id)
+    if user is None or not user.is_active:
+        raise InvalidTokenError()
     return user
 
 

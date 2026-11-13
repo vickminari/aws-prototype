@@ -103,8 +103,10 @@ descarta a pré-sessão e renova o cookie CSRF; o frontend deve consultar novame
 `/api/auth/csrf` para obter o token público da sessão autenticada. Com cookie JWT
 presente, escritas não voltam à pré-sessão em caso de JWT inválido. Apenas o
 bootstrap pode descartar uma credencial inválida para permitir novo login.
-A consulta de usuário ativo/revogação nas rotas entra na etapa 5 e a proteção
-das escritas de cadastro/perfil na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+Na etapa 5, `get_current_user` passou a ler o cookie, validar o JWT, exigir
+`sub` UUID canônico, recusar `jti` revogado e usuário inexistente/inativo, sempre
+com 401 e sem fallback Bearer. A proteção das escritas de cadastro/perfil entra na
+etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
 configurações CSRF de produção.
 
 ## Issues impactadas

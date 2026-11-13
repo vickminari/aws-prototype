@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 
-from app.controllers.auth_cookies import auth_cookie_name, clear_auth_cookie
+from app.controllers.auth_cookies import clear_auth_cookie, read_auth_cookie
 from app.core.config import Settings
 from app.core.csrf import (
     MAX_CSRF_TOKEN_LENGTH,
@@ -93,7 +93,7 @@ def issue_csrf_token(request: Request, response: Response, settings: Settings) -
 
 def _authenticated_binding(request: Request, settings: Settings) -> str | None:
     """Obtém o jti somente depois de validar assinatura e expiração do JWT."""
-    token = request.cookies.get(auth_cookie_name(settings))
+    token = read_auth_cookie(request, settings)
     if token is None:
         return None
     claims = decode_access_token(token, settings=settings)
