@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import Request, Response
 from sqlalchemy.orm import Session
 
-from app.controllers.auth_cookies import clear_auth_cookie, read_auth_cookie, set_auth_cookie
+from app.controllers.auth_cookies import clear_auth_cookie, read_session_claims, set_auth_cookie
 from app.controllers.csrf_http import clear_csrf_cookies, rotate_csrf_after_login
 from app.core.config import Settings
 from app.core.security import create_access_token, decode_access_token
@@ -15,9 +15,8 @@ from app.services import auth_service
 
 def _revoke_current_session(request: Request, db: Session, settings: Settings) -> None:
     """Revoga o JWT do cookie, se houver; `require_csrf` já recusou um JWT inválido."""
-    token = read_auth_cookie(request, settings)
-    if token:
-        claims = decode_access_token(token, settings=settings)
+    claims = read_session_claims(request, settings)
+    if claims is not None:
         expires_at = datetime.fromtimestamp(claims["exp"], UTC)
         auth_service.logout(db, claims["sub"], claims["jti"], expires_at)
 

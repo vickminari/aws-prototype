@@ -16,18 +16,17 @@ from fastapi import Depends, Request, Security
 from fastapi.security import APIKeyCookie
 from sqlalchemy.orm import Session
 
-from app.controllers.auth_cookies import read_auth_cookie
+from app.controllers.auth_cookies import read_session_claims
 from app.controllers.csrf_http import validate_csrf_request
 from app.core.config import Settings, get_settings
 from app.core.database import SessionLocal
 from app.core.exceptions import InvalidTokenError
-from app.core.security import decode_access_token
 from app.models import User
 from app.services import auth_service
 from app.services.storage import StorageService, create_storage
 
 # Só documenta o esquema no OpenAPI: o nome real depende do ambiente e é lido
-# por read_auth_cookie. auto_error=False mantém o formato padrão de erro 401.
+# por read_session_claims. auto_error=False mantém o formato padrão de erro 401.
 cookie_scheme = APIKeyCookie(
     name="access_token",
     scheme_name="CookieAuth",
@@ -65,10 +64,9 @@ def get_current_user(
     Raises:
         InvalidTokenError: se o cookie faltar ou a sessão for inválida por qualquer motivo.
     """
-    token = read_auth_cookie(request, settings)
-    if not token:
+    claims = read_session_claims(request, settings)
+    if claims is None:
         raise InvalidTokenError()
-    claims = decode_access_token(token, settings=settings)
     return auth_service.get_session_user(db, claims["sub"], claims["jti"])
 
 

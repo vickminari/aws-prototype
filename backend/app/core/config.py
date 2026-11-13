@@ -1,11 +1,12 @@
 """Configuração da aplicação lida de variáveis de ambiente (ARQ §5.8)."""
 
-from functools import lru_cache
+from functools import cached_property, lru_cache
 from typing import Annotated, Literal, Self
-from urllib.parse import urlsplit
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+from app.core.origins import Origin, parse_origin
 
 # Valor só para desenvolvimento; em produção o segredo vem do Parameter Store.
 DEV_JWT_SECRET = "dev-inseguro-troque-em-producao-0000000"
@@ -49,25 +50,17 @@ class Settings(BaseSettings):
     @classmethod
     def _validate_csrf_origins(cls, origins: list[str]) -> list[str]:
         """Aceita apenas origens HTTP(S) explícitas, sem credenciais ou curingas."""
-        for origin in origins:
-            try:
-                parsed = urlsplit(origin)
-                port = parsed.port
-                valid = (
-                    parsed.scheme in {"http", "https"}
-                    and bool(parsed.hostname)
-                    and parsed.username is None
-                    and parsed.password is None
-                    and parsed.path in {"", "/"}
-                    and not any(char in origin for char in "*?#")
-                    and not any(char.isspace() or ord(char) < 32 for char in origin)
-                    and (port is None or port > 0)
-                )
-            except ValueError:
-                valid = False
-            if not valid:
+        normalized = [origin.removesuffix("/") for origin in origins]
+        for origin in normalized:
+            # Mesmo parser da validação das requisições, para não divergirem.
+            if "*" in origin or parse_origin(origin) is None:
                 raise ValueError("CSRF_TRUSTED_ORIGINS exige origens HTTP(S) explícitas")
-        return [origin.rstrip("/") for origin in origins]
+        return normalized
+
+    @cached_property
+    def csrf_trusted_origin_keys(self) -> frozenset[Origin]:
+        """Origens confiáveis já normalizadas em `(esquema, host, porta)`, calculadas uma vez."""
+        return frozenset(filter(None, map(parse_origin, self.csrf_trusted_origins)))
 
     @model_validator(mode="after")
     def _check_consistency(self) -> Self:
@@ -93,8 +86,8 @@ class Settings(BaseSettings):
         if self.environment == "prod":
             if self.csrf_secret == DEV_CSRF_SECRET:
                 raise ValueError("CSRF_SECRET de produção não pode ser o padrão de desenvolvimento")
-            if not self.csrf_trusted_origins or any(
-                urlsplit(origin).scheme != "https" for origin in self.csrf_trusted_origins
+            if not self.csrf_trusted_origin_keys or any(
+                scheme != "https" for scheme, _, _ in self.csrf_trusted_origin_keys
             ):
                 raise ValueError("Produção exige CSRF_TRUSTED_ORIGINS explícitas com HTTPS")
         return self
