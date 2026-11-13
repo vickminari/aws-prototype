@@ -1,5 +1,6 @@
 """Regras de cadastro e autenticação, independentes da camada HTTP."""
 
+from datetime import datetime
 from secrets import token_urlsafe
 from uuid import UUID
 
@@ -42,6 +43,22 @@ def authenticate(db: Session, identifier: str, password: str) -> User:
     return user
 
 
+def _parse_subject(subject: str) -> UUID:
+    """Converte o `sub` no UUID canônico emitido no login.
+
+    Raises:
+        InvalidTokenError: se o valor não for um UUID canônico.
+    """
+    try:
+        user_id = UUID(subject)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise InvalidTokenError() from exc
+    # Rejeita variações aceitas por UUID() (sem hífens, chaves, urn:) não emitidas por nós.
+    if str(user_id) != subject:
+        raise InvalidTokenError()
+    return user_id
+
+
 def get_session_user(db: Session, subject: str, jti: str) -> User:
     """Resolve o usuário de um JWT já validado, checando revogação e status.
 
@@ -53,19 +70,36 @@ def get_session_user(db: Session, subject: str, jti: str) -> User:
         InvalidTokenError: se o `sub` for malformado, o `jti` estiver revogado
             ou o usuário não existir ou estiver inativo.
     """
-    try:
-        user_id = UUID(subject)
-    except (TypeError, ValueError, AttributeError) as exc:
-        raise InvalidTokenError() from exc
-    # Rejeita variações aceitas por UUID() (sem hífens, chaves, urn:) não emitidas por nós.
-    if str(user_id) != subject:
-        raise InvalidTokenError()
+    user_id = _parse_subject(subject)
     if db.get(RevokedToken, jti) is not None:
         raise InvalidTokenError()
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise InvalidTokenError()
     return user
+
+
+def logout(db: Session, subject: str, jti: str, expires_at: datetime) -> None:
+    """Revoga a sessão `jti` até a expiração original do JWT; é idempotente.
+
+    Um `jti` já revogado, inclusive por outro logout concorrente, não gera erro
+    nem um segundo registro.
+
+    Raises:
+        InvalidTokenError: se o `sub` não for um UUID canônico.
+        IntegrityError: se outra restrição do banco impedir a revogação.
+    """
+    user_id = _parse_subject(subject)
+    if db.get(RevokedToken, jti) is not None:
+        return
+    db.add(RevokedToken(jti=jti, user_id=user_id, expires_at=expires_at))
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # Outro logout pode ter gravado o mesmo jti após a checagem acima.
+        if db.get(RevokedToken, jti) is None:
+            raise
 
 
 def _ensure_unique_identity(db: Session, email: str, username: str) -> None:

@@ -100,17 +100,28 @@ def _authenticated_binding(request: Request, settings: Settings) -> str | None:
     return f"auth:{claims['jti']}"
 
 
-def _issue_authenticated_csrf(response: Response, binding: str, settings: Settings) -> str:
-    """Descarta a pré-sessão e emite um novo token ligado à sessão autenticada."""
-    lifetime = settings.csrf_expire_minutes * 60
-    token = create_csrf_token(binding, settings.csrf_secret, expires_in=lifetime)
+def _clear_csrf_cookie(response: Response, name: str, settings: Settings) -> None:
+    """Expira o cookie CSRF com os mesmos atributos usados na criação."""
     response.delete_cookie(
-        key=csrf_cookie_name("csrf_session", settings),
+        key=csrf_cookie_name(name, settings),
         path="/",
         secure=settings.environment == "prod",
         httponly=True,
         samesite="lax",
     )
+
+
+def clear_csrf_cookies(response: Response, settings: Settings) -> None:
+    """Remove pré-sessão e token CSRF, encerrando o estado CSRF do navegador."""
+    for name in ("csrf_session", "csrf_token"):
+        _clear_csrf_cookie(response, name, settings)
+
+
+def _issue_authenticated_csrf(response: Response, binding: str, settings: Settings) -> str:
+    """Descarta a pré-sessão e emite um novo token ligado à sessão autenticada."""
+    lifetime = settings.csrf_expire_minutes * 60
+    token = create_csrf_token(binding, settings.csrf_secret, expires_in=lifetime)
+    _clear_csrf_cookie(response, "csrf_session", settings)
     response.set_cookie(
         key=csrf_cookie_name("csrf_token", settings),
         value=token,

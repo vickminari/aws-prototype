@@ -102,7 +102,7 @@ Nunca use `HTTPException` em services.
 ### Usuário autenticado nos testes
 
 `get_current_user` autentica pelo cookie HttpOnly do login (ver
-[Login, cookies e CSRF](#login-cookies-e-csrf-issue-9-etapas-2-a-5)). Para testar uma rota
+[Login, logout, cookies e CSRF](#login-logout-cookies-e-csrf-issue-9-etapas-2-a-6)). Para testar uma rota
 protegida sem passar pelo login, use a fixture `auth_user`
 (ver [Fixtures](#fixtures-testsconftestpy)), que faz:
 
@@ -243,13 +243,13 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
-### Login, cookies e CSRF (issue #9, etapas 2 a 5)
+### Login, logout, cookies e CSRF (issue #9, etapas 2 a 6)
 
 `controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
 `access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
 `HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`; produção sempre usa `Secure`.
 A duração configurada é `JWT_EXPIRE_MINUTES * 60` segundos. Os helpers não
-validam o JWT. A criação do cookie está integrada ao login; logout entra na etapa 6.
+validam o JWT. A criação do cookie está integrada ao login e a remoção, ao logout.
 
 | Variável | Desenvolvimento/testes | Produção |
 |---|---|---|
@@ -306,6 +306,20 @@ ausente, retorna 401 com `INVALID_TOKEN`, nunca 500. Não há fallback para
 descreve o esquema `CookieAuth` (`apiKey` em cookie); após o login no próprio
 Swagger, o navegador envia o cookie automaticamente. A revisão do header
 `WWW-Authenticate: Bearer` nas respostas 401 fica para a etapa 7.
+
+`POST /api/auth/logout` exige origem confiável e `X-CSRF-Token` vinculado à sessão
+(o mesmo fluxo das demais escritas). Não usa `get_current_user`: revoga o `jti` do
+cookie via `auth_service.logout`, gravando em `revoked_tokens` a expiração original
+do JWT, e remove os cookies de acesso, `csrf_token` e `csrf_session` com os mesmos
+atributos da criação. Responde 204 sem corpo e com `Cache-Control: no-store`.
+
+- Logout é idempotente: repetir com uma cópia dos cookies (outra aba, por exemplo)
+  retorna 204 sem duplicar a revogação, inclusive em gravações concorrentes.
+- Repetir no mesmo navegador, já sem cookies, retorna 403 `CSRF_INVALID`; o
+  frontend (#14) deve tratar isso como sessão já encerrada, nunca como erro 500.
+- Somente com pré-sessão (sem JWT) retorna 204 sem nada a revogar.
+- Uma cópia do JWT revogado recebe 401 nas rotas protegidas; outras sessões do
+  mesmo usuário continuam válidas, e um novo login funciona normalmente.
 Por enquanto, apenas o login exige essa dependência entre as rotas da aplicação.
 Não há fallback automático para cookie sem `Secure` em produção.
 

@@ -1,10 +1,10 @@
-"""Rotas públicas de cadastro, inicialização CSRF e login por cookie."""
+"""Rotas públicas de cadastro, inicialização CSRF, login e logout por cookie."""
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
-from app.controllers.auth_session import establish_login
+from app.controllers.auth_session import end_session, establish_login
 from app.controllers.csrf_http import issue_csrf_token
 from app.core.config import Settings, get_settings
 from app.core.exceptions import (
@@ -47,6 +47,31 @@ def login(
     user = auth_service.authenticate(db, form.username, form.password)
     establish_login(response, user.id, settings)
     return LoginResponse()
+
+
+@router.post(
+    "/logout",
+    status_code=204,
+    response_class=Response,
+    dependencies=[Depends(require_csrf)],
+    summary="Encerra a sessão, revoga o JWT e remove os cookies",
+    description=(
+        "Requer origem confiável e X-CSRF-Token vinculado à sessão. Revoga o jti do cookie "
+        "até a expiração original e remove os cookies de acesso e CSRF. Repetir com uma "
+        "sessão já revogada também retorna 204; sem cookies, a proteção CSRF responde 403."
+    ),
+    responses={
+        204: {"description": "Sessão encerrada"},
+        403: error_response("Falha de origem ou proteção CSRF", InvalidCsrfTokenError),
+    },
+)
+def logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    end_session(request, response, db, settings)
 
 
 @router.get(

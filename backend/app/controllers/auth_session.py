@@ -1,13 +1,16 @@
-"""Estabelecimento da sessão HTTP após o service autenticar as credenciais."""
+"""Início e fim da sessão HTTP; as regras de autenticação ficam no service."""
 
+from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import Response
+from fastapi import Request, Response
+from sqlalchemy.orm import Session
 
-from app.controllers.auth_cookies import set_auth_cookie
-from app.controllers.csrf_http import rotate_csrf_after_login
+from app.controllers.auth_cookies import clear_auth_cookie, read_auth_cookie, set_auth_cookie
+from app.controllers.csrf_http import clear_csrf_cookies, rotate_csrf_after_login
 from app.core.config import Settings
 from app.core.security import create_access_token, decode_access_token
+from app.services import auth_service
 
 
 def establish_login(response: Response, user_id: UUID, settings: Settings) -> None:
@@ -16,3 +19,19 @@ def establish_login(response: Response, user_id: UUID, settings: Settings) -> No
     claims = decode_access_token(token, settings=settings)
     set_auth_cookie(response, token, settings)
     rotate_csrf_after_login(response, claims["jti"], settings)
+
+
+def end_session(request: Request, response: Response, db: Session, settings: Settings) -> None:
+    """Revoga o JWT do cookie, se houver, e remove os cookies de sessão e CSRF.
+
+    Deve rodar após `require_csrf`, que já recusa um JWT inválido presente no cookie.
+    Sem JWT (somente pré-sessão) não há o que revogar; os cookies são limpos igualmente.
+    """
+    token = read_auth_cookie(request, settings)
+    if token:
+        claims = decode_access_token(token, settings=settings)
+        expires_at = datetime.fromtimestamp(claims["exp"], UTC)
+        auth_service.logout(db, claims["sub"], claims["jti"], expires_at)
+    clear_auth_cookie(response, settings)
+    clear_csrf_cookies(response, settings)
+    response.headers["Cache-Control"] = "no-store"

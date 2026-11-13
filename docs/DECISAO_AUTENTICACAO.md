@@ -105,8 +105,11 @@ presente, escritas não voltam à pré-sessão em caso de JWT inválido. Apenas 
 bootstrap pode descartar uma credencial inválida para permitir novo login.
 Na etapa 5, `get_current_user` passou a ler o cookie, validar o JWT, exigir
 `sub` UUID canônico, recusar `jti` revogado e usuário inexistente/inativo, sempre
-com 401 e sem fallback Bearer. A proteção das escritas de cadastro/perfil entra na
-etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+com 401 e sem fallback Bearer. Na etapa 6, `POST /api/auth/logout` passou a exigir
+CSRF, revogar o `jti` até a expiração original sem duplicar registros e remover os
+cookies de acesso e CSRF, com 204. Repetir com cookies copiados retorna 204; repetir
+já sem cookies retorna 403 de CSRF. A proteção das escritas de cadastro, perfil e
+avatar entra na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
 configurações CSRF de produção.
 
 ## Issues impactadas
