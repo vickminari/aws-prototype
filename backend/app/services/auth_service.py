@@ -83,22 +83,24 @@ def logout(db: Session, subject: str, jti: str, expires_at: datetime) -> None:
     """Revoga a sessão `jti` até a expiração original do JWT; é idempotente.
 
     Um `jti` já revogado, inclusive por outro logout concorrente, não gera erro
-    nem um segundo registro.
+    nem um segundo registro. Se o usuário não existir mais, não há o que revogar.
 
     Raises:
         InvalidTokenError: se o `sub` não for um UUID canônico.
         IntegrityError: se outra restrição do banco impedir a revogação.
     """
     user_id = _parse_subject(subject)
-    if db.get(RevokedToken, jti) is not None:
+    if db.get(RevokedToken, jti) is not None or db.get(User, user_id) is None:
+        # Usuário removido: o JWT já não autentica (get_session_user), nada a revogar.
         return
     db.add(RevokedToken(jti=jti, user_id=user_id, expires_at=expires_at))
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
-        # Outro logout pode ter gravado o mesmo jti após a checagem acima.
-        if db.get(RevokedToken, jti) is None:
+        # Após a checagem, outro logout pode ter gravado o mesmo jti ou o usuário
+        # pode ter sido removido (FK). Só propaga conflitos de outra natureza.
+        if db.get(RevokedToken, jti) is None and db.get(User, user_id) is not None:
             raise
 
 

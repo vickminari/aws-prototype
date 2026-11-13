@@ -317,7 +317,9 @@ atributos da criação. Responde 204 sem corpo e com `Cache-Control: no-store`.
   retorna 204 sem duplicar a revogação, inclusive em gravações concorrentes.
 - Repetir no mesmo navegador, já sem cookies, retorna 403 `CSRF_INVALID`; o
   frontend (#14) deve tratar isso como sessão já encerrada, nunca como erro 500.
-- Somente com pré-sessão (sem JWT) retorna 204 sem nada a revogar.
+- Somente com pré-sessão (sem JWT) retorna 204 sem nada a revogar. O mesmo vale
+  para JWT de usuário já removido do banco: o token não autentica mais e o
+  logout apenas limpa os cookies, sem violar a chave estrangeira.
 - Uma cópia do JWT revogado recebe 401 nas rotas protegidas; outras sessões do
   mesmo usuário continuam válidas, e um novo login funciona normalmente.
 Por enquanto, apenas o login exige essa dependência entre as rotas da aplicação.

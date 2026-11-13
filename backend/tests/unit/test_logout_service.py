@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import InvalidTokenError
@@ -117,3 +118,13 @@ def test_logout_tolerates_user_removed_by_another_session(db_session, engine, us
     auth_service.logout(db_session, str(user.id), str(uuid4()), expires_at)
 
     assert revoked_count(db_session) == 0
+
+
+def test_logout_propagates_unrelated_integrity_error(db_session, user, expires_at, monkeypatch):
+    def failing_commit():
+        raise IntegrityError("INSERT", {}, Exception("outra restrição"))
+
+    monkeypatch.setattr(db_session, "commit", failing_commit)
+
+    with pytest.raises(IntegrityError):
+        auth_service.logout(db_session, str(user.id), str(uuid4()), expires_at)
