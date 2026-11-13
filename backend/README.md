@@ -298,6 +298,9 @@ Fluxo de login para o frontend (#12):
 1. `GET /api/auth/csrf`: receba os cookies e guarde `csrf_token` em memória.
 2. `POST /api/auth/login`: envie `username` (ou email) e `password` em
    `application/x-www-form-urlencoded`, mais `X-CSRF-Token` e os cookies.
+   Identificador com `@` é buscado só como email; sem `@`, só como username.
+   Cadastro e `PATCH /api/users/me` impedem username com `@` e email sem `@`,
+   então uma conta não consegue capturar o login de outra.
 3. Sucesso: 200 com `{"detail":"Login realizado"}`, `Cache-Control: no-store`,
    cookie JWT HttpOnly e cookie CSRF renovado. A pré-sessão é removida; o JWT
    nunca aparece no JSON. Credenciais incorretas e usuário inativo retornam 401

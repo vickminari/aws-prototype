@@ -31,11 +31,10 @@ def authenticate(db: Session, identifier: str, password: str) -> User:
             estiver inativo, sempre com a mesma mensagem pública.
     """
     normalized_identifier = identifier.lower()
-    user = db.scalar(
-        select(User).where(
-            (User.username == normalized_identifier) | (User.email == normalized_identifier)
-        )
-    )
+    # Username nunca contém "@" e email sempre contém: busca em uma única coluna, para que
+    # um identificador não possa corresponder a duas contas.
+    column = User.email if "@" in normalized_identifier else User.username
+    user = db.scalar(select(User).where(column == normalized_identifier))
     hashed_password = user.hashed_password if user is not None else _DUMMY_PASSWORD_HASH
     password_matches = verify_password(password, hashed_password)
     if user is None or not password_matches or not user.is_active:
