@@ -1,18 +1,52 @@
-"""Rotas de cadastro; autenticação e cookies serão implementados na issue #9."""
+"""Rotas públicas de cadastro, inicialização CSRF e login por cookie."""
 
 from fastapi import APIRouter, Depends, Request, Response
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from app.controllers.auth_session import establish_login
 from app.controllers.csrf_http import issue_csrf_token
 from app.core.config import Settings, get_settings
-from app.core.exceptions import EmailAlreadyExistsError, UsernameAlreadyExistsError
-from app.dependencies import get_db
-from app.schemas.auth import CsrfRead
-from app.schemas.error import ErrorRead, ValidationErrorRead
+from app.core.exceptions import (
+    EmailAlreadyExistsError,
+    InvalidCredentialsError,
+    InvalidCsrfTokenError,
+    UsernameAlreadyExistsError,
+)
+from app.dependencies import get_db, require_csrf
+from app.schemas.auth import CsrfRead, LoginResponse
+from app.schemas.error import ErrorRead, ValidationErrorRead, error_response
 from app.schemas.user import UserCreate, UserRead
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.post(
+    "/login",
+    response_model=LoginResponse,
+    dependencies=[Depends(require_csrf)],
+    summary="Autentica por username ou email e estabelece a sessão HttpOnly",
+    description=(
+        "Requer pré-sessão/cookie CSRF e X-CSRF-Token de /api/auth/csrf, além de origem confiável. "
+        "Recebe formulário username/password, define cookies, descarta a pré-sessão e renova CSRF. "
+        "Após o login, consulte /api/auth/csrf para obter o novo token público. Não retorna JWT."
+    ),
+    responses={
+        401: error_response("Credenciais inválidas ou usuário inativo", InvalidCredentialsError),
+        403: error_response("Falha de origem ou proteção CSRF", InvalidCsrfTokenError),
+        422: {"model": ValidationErrorRead, "description": "Formulário inválido"},
+    },
+)
+def login(
+    response: Response,
+    form: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+) -> LoginResponse:
+    user = auth_service.authenticate(db, form.username, form.password)
+    establish_login(response, user.id, settings)
+    return LoginResponse()
 
 
 @router.get(

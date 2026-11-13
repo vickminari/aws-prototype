@@ -207,3 +207,55 @@ def test_authenticated_csrf_is_bound_to_jti_not_only_user(login_client, login_se
     assert response.status_code == 403
     assert response.json()["code"] == "CSRF_INVALID"
     assert login_client.app.state.csrf_writes == 0
+
+
+@pytest.mark.parametrize("defect", ["malformed", "wrong_secret", "expired"])
+def test_invalid_jwt_cannot_fall_back_to_pre_session_but_bootstrap_allows_new_login(
+    login_client, login_settings, login_user, defect
+):
+    headers = csrf_headers(login_client)
+    claims = {
+        "sub": str(login_user.id),
+        "jti": str(uuid4()),
+        "iat": 0,
+        "exp": 1 if defect == "expired" else 9999999999,
+    }
+    if defect == "malformed":
+        invalid = "nao-e-jwt"
+    else:
+        secret = (
+            "outro-segredo-dos-testes-00000000000000"
+            if defect == "wrong_secret"
+            else login_settings.jwt_secret
+        )
+        invalid = jwt.encode(claims, secret, algorithm="HS256")
+    name = cookie_prefix(login_settings) + "access_token"
+    login_client.cookies.set(name, invalid, domain="app.example.com", path="/")
+
+    rejected = login_client.post("/login-write-test", headers=headers)
+    assert rejected.status_code == 403
+    assert rejected.json()["code"] == "CSRF_INVALID"
+    assert login_client.app.state.csrf_writes == 0
+
+    # Apenas o bootstrap descarta a credencial inválida para permitir novo login.
+    refreshed_headers = csrf_headers(login_client)
+    assert name not in login_client.cookies
+    response = login_client.post(
+        LOGIN_URL,
+        data={"username": login_user.username, "password": PASSWORD},
+        headers=refreshed_headers,
+    )
+    assert response.status_code == 200
+
+
+def test_login_openapi_describes_form_and_public_response(login_client):
+    document = login_client.get("/api/openapi.json").json()
+    operation = document["paths"][LOGIN_URL]["post"]
+
+    assert "application/x-www-form-urlencoded" in operation["requestBody"]["content"]
+    assert not operation.get("security")
+    assert {"200", "401", "403", "422"} <= set(operation["responses"])
+    assert operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/LoginResponse"
+    }
+    assert set(document["components"]["schemas"]["LoginResponse"]["properties"]) == {"detail"}

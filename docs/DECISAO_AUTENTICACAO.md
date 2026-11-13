@@ -98,8 +98,13 @@ padrão **60 minutos** para facilitar os testes/demonstração. Expirar CSRF nã
 revoga o JWT: o cliente pode obter nova pré-sessão/token pelo endpoint. O núcleo
 usa HMAC-SHA256 e nonce aleatório; o cookie de pré-sessão também é assinado.
 A emissão HTTP e a dependência de validação da pré-sessão estão implementadas.
-O vínculo ao `jti`/rotação no login entra na etapa 4 e a proteção das rotas
-existentes na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+O vínculo ao `jti` e a rotação no login foram integrados na etapa 4. Login
+descarta a pré-sessão e renova o cookie CSRF; o frontend deve consultar novamente
+`/api/auth/csrf` para obter o token público da sessão autenticada. Com cookie JWT
+presente, escritas não voltam à pré-sessão em caso de JWT inválido. Apenas o
+bootstrap pode descartar uma credencial inválida para permitir novo login.
+A consulta de usuário ativo/revogação nas rotas entra na etapa 5 e a proteção
+das escritas de cadastro/perfil na etapa 7. A #21 deverá provisionar `CSRF_SECRET` e carregar as
 configurações CSRF de produção.
 
 ## Issues impactadas

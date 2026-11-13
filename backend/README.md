@@ -234,13 +234,13 @@ de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
 
-### Configuração de cookies e CSRF (issue #9, etapas 2 e 3)
+### Login, cookies e CSRF (issue #9, etapas 2 a 4)
 
 `controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
 `access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
 `HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`; produção sempre usa `Secure`.
 A duração configurada é `JWT_EXPIRE_MINUTES * 60` segundos. Os helpers não
-validam o JWT e ainda não estão ligados a endpoints de login/logout nesta etapa.
+validam o JWT. A criação do cookie está integrada ao login; logout entra na etapa 6.
 
 | Variável | Desenvolvimento/testes | Produção |
 |---|---|---|
@@ -269,12 +269,26 @@ indefinidamente a mesma pré-sessão. Se expirar, obtenha novo token pelo endpoi
 
 `require_csrf` valida primeiro `Origin` ou, apenas quando ausente, a origem do
 `Referer`. Depois exige cookie/header iguais e assinatura válida vinculada à
-pré-sessão. Falhas retornam 403 com `CSRF_INVALID`, antes de executar a escrita.
+pré-sessão ou ao `jti` do JWT válido. Com cookie JWT presente não há fallback
+para pré-sessão se o JWT estiver inválido. Falhas retornam 403 com `CSRF_INVALID`.
 
-A dependência está pronta e testada em rota isolada. O vínculo HTTP ao `jti`
-e a rotação após login entram na etapa 4; a aplicação às rotas existentes
-(cadastro e perfil inclusive) e a adaptação de suas fixtures entram na etapa 7.
-Portanto, as escritas existentes ainda não estão protegidas por CSRF nesta etapa.
+Fluxo de login para o frontend (#12):
+
+1. `GET /api/auth/csrf`: receba os cookies e guarde `csrf_token` em memória.
+2. `POST /api/auth/login`: envie `username` (ou email) e `password` em
+   `application/x-www-form-urlencoded`, mais `X-CSRF-Token` e os cookies.
+3. Sucesso: 200 com `{"detail":"Login realizado"}`, `Cache-Control: no-store`,
+   cookie JWT HttpOnly e cookie CSRF renovado. A pré-sessão é removida; o JWT
+   nunca aparece no JSON. Credenciais incorretas e usuário inativo retornam 401
+   com a mesma mensagem; erro de origem/CSRF retorna 403; formulário inválido, 422.
+4. Busque novamente `/api/auth/csrf` para ler o novo token CSRF vinculado ao `jti`.
+   O token antigo não autoriza escritas, mesmo restaurando os cookies da pré-sessão.
+
+O bootstrap com JWT expirado/adulterado remove o cookie de acesso inválido e
+permite obter pré-sessão para novo login. Isso não autentica usuário nem autoriza
+escritas. A validação completa de usuário ativo/revogação nas rotas entra na
+etapa 5; a proteção CSRF de cadastro e perfil entra na integração da etapa 7.
+Por enquanto, apenas o login exige essa dependência entre as rotas da aplicação.
 Não há fallback automático para cookie sem `Secure` em produção.
 
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se

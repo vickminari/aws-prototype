@@ -5,13 +5,15 @@ from urllib.parse import urlsplit
 
 from fastapi import Request, Response
 
+from app.controllers.auth_cookies import auth_cookie_name, clear_auth_cookie
 from app.core.config import Settings
 from app.core.csrf import (
     MAX_CSRF_TOKEN_LENGTH,
     create_csrf_token,
     verify_csrf_token,
 )
-from app.core.exceptions import InvalidCsrfTokenError
+from app.core.exceptions import InvalidCsrfTokenError, InvalidTokenError
+from app.core.security import decode_access_token
 
 _PRE_SESSION_CONTEXT = "csrf-pre-session-cookie-v1"
 
@@ -60,7 +62,16 @@ def _require_trusted_origin(request: Request, settings: Settings) -> None:
 
 
 def issue_csrf_token(request: Request, response: Response, settings: Settings) -> str:
-    """Inicia/reutiliza uma pré-sessão assinada e emite o token público CSRF."""
+    """Emite CSRF vinculado ao JWT válido ou inicia/reutiliza uma pré-sessão."""
+    try:
+        binding = _authenticated_binding(request, settings)
+    except InvalidTokenError:
+        # Permite obter uma pré-sessão para novo login após o JWT expirar.
+        # Escritas com JWT inválido continuam falhando, sem fallback de sessão.
+        clear_auth_cookie(response, settings)
+        binding = None
+    if binding is not None:
+        return _issue_authenticated_csrf(response, binding, settings)
     session = request.cookies.get(csrf_cookie_name("csrf_session", settings), "")
     lifetime = settings.csrf_expire_minutes * 60
     if not verify_csrf_token(session, _PRE_SESSION_CONTEXT, settings.csrf_secret):
@@ -80,8 +91,46 @@ def issue_csrf_token(request: Request, response: Response, settings: Settings) -
     return token
 
 
+def _authenticated_binding(request: Request, settings: Settings) -> str | None:
+    """Obtém o jti somente depois de validar assinatura e expiração do JWT."""
+    token = request.cookies.get(auth_cookie_name(settings))
+    if token is None:
+        return None
+    claims = decode_access_token(token, settings=settings)
+    return f"auth:{claims['jti']}"
+
+
+def _issue_authenticated_csrf(response: Response, binding: str, settings: Settings) -> str:
+    """Descarta a pré-sessão e emite um novo token ligado à sessão autenticada."""
+    lifetime = settings.csrf_expire_minutes * 60
+    token = create_csrf_token(binding, settings.csrf_secret, expires_in=lifetime)
+    response.delete_cookie(
+        key=csrf_cookie_name("csrf_session", settings),
+        path="/",
+        secure=settings.environment == "prod",
+        httponly=True,
+        samesite="lax",
+    )
+    response.set_cookie(
+        key=csrf_cookie_name("csrf_token", settings),
+        value=token,
+        max_age=lifetime,
+        path="/",
+        secure=settings.environment == "prod",
+        httponly=True,
+        samesite="lax",
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return token
+
+
+def rotate_csrf_after_login(response: Response, jti: str, settings: Settings) -> None:
+    """Renova o cookie CSRF após login; o frontend obtém o valor por GET /auth/csrf."""
+    _issue_authenticated_csrf(response, f"auth:{jti}", settings)
+
+
 def validate_csrf_request(request: Request, settings: Settings) -> None:
-    """Valida origem, double-submit e vínculo à pré-sessão antes de uma escrita.
+    """Valida origem, double-submit e vínculo à sessão antes de uma escrita.
 
     Raises:
         InvalidCsrfTokenError: se origem, cookies, header ou assinatura forem inválidos.
@@ -90,13 +139,21 @@ def validate_csrf_request(request: Request, settings: Settings) -> None:
     headers = request.headers.getlist("x-csrf-token")
     header = headers[0] if len(headers) == 1 else ""
     cookie = request.cookies.get(csrf_cookie_name("csrf_token", settings), "")
-    session = request.cookies.get(csrf_cookie_name("csrf_session", settings), "")
     if (
         not header
         or len(header) > MAX_CSRF_TOKEN_LENGTH
         or len(cookie) > MAX_CSRF_TOKEN_LENGTH
         or not hmac.compare_digest(header.encode(), cookie.encode())
-        or not verify_csrf_token(session, _PRE_SESSION_CONTEXT, settings.csrf_secret)
-        or not verify_csrf_token(header, f"pre:{session}", settings.csrf_secret)
     ):
+        raise InvalidCsrfTokenError()
+    try:
+        binding = _authenticated_binding(request, settings)
+    except InvalidTokenError as exc:
+        raise InvalidCsrfTokenError() from exc
+    if binding is None:
+        session = request.cookies.get(csrf_cookie_name("csrf_session", settings), "")
+        if not verify_csrf_token(session, _PRE_SESSION_CONTEXT, settings.csrf_secret):
+            raise InvalidCsrfTokenError()
+        binding = f"pre:{session}"
+    if not verify_csrf_token(header, binding, settings.csrf_secret):
         raise InvalidCsrfTokenError()
