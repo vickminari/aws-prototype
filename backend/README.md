@@ -19,6 +19,8 @@ docker compose up --build
 O código em `backend/app` é montado no container com `--reload`: salvar um arquivo reinicia a API.
 Ao subir, o container roda `alembic upgrade head` (ver [Migrações](#migrações-alembic)).
 Variáveis opcionais vão em `backend/.env` (copie de `.env.example`); o `DATABASE_URL` do compose já aponta para o serviço `db`.
+Sem `.env`, a API sobe em `ENVIRONMENT=dev` e aceita escritas (CSRF) vindas do frontend local
+em `http://localhost:5173` e `http://127.0.0.1:5173`; defina `CSRF_TRUSTED_ORIGINS` para outras origens.
 
 ### Sem Docker (venv)
 

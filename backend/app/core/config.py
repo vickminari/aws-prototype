@@ -13,6 +13,9 @@ DEV_JWT_SECRET = "dev-inseguro-troque-em-producao-0000000"
 DEV_CSRF_SECRET = "dev-csrf-inseguro-troque-em-producao-0000000"
 MIN_JWT_SECRET_LENGTH = 32
 MIN_CSRF_SECRET_LENGTH = 32
+# Frontend local (Vite). Usado só em ENVIRONMENT=dev quando CSRF_TRUSTED_ORIGINS não é
+# definido, para `docker compose up` funcionar sem backend/.env; test e prod são explícitos.
+DEV_CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 
 
 class Settings(BaseSettings):
@@ -70,6 +73,8 @@ class Settings(BaseSettings):
             ValueError: se em produção o `JWT_SECRET` for o padrão de dev ou curto demais,
                 se CSRF estiver inseguro/incompleto, ou se `STORAGE_BACKEND=s3` sem `S3_BUCKET`.
         """
+        if self.environment == "dev" and not self.csrf_trusted_origins:
+            self.csrf_trusted_origins = list(DEV_CSRF_TRUSTED_ORIGINS)
         if self.environment == "prod" and (
             self.jwt_secret == DEV_JWT_SECRET or len(self.jwt_secret) < MIN_JWT_SECRET_LENGTH
         ):
