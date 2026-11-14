@@ -1,5 +1,7 @@
 # Protótipo 1 — Aplicação Web na AWS
 
+[![CI](https://github.com/vickminari/aws-prototype/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/vickminari/aws-prototype/actions/workflows/ci.yml)
+
 Protótipo da disciplina **Tópicos em Engenharia de Software (Engenharia de Software aplicada à AWS)** — UFPI.
 
 Aplicação web com cadastro de usuários, login/logout com JWT, dashboard e edição de perfil (com foto armazenada no S3), hospedada na AWS em uma VPC própria com EC2, RDS PostgreSQL e S3.

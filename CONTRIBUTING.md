@@ -46,6 +46,7 @@ A sequência de commits é avaliada:
 
 - [ ] Critérios de aceite da issue cumpridos.
 - [ ] Testes passando (código) ou verificação colada no report (AWS).
+- [ ] CI verde no PR: jobs **Backend** e **Frontend** (`.github/workflows/ci.yml`).
 - [ ] README do módulo atualizado, se mudou como rodar.
 - [ ] Nenhum segredo (senha, chave, `JWT_SECRET`, `DATABASE_URL`) em código, docs ou prints.
 
