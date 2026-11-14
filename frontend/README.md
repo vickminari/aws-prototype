@@ -59,14 +59,15 @@ src/
 ├── App.tsx               Providers globais + router
 ├── index.css             Entrada do Tailwind
 ├── routes/               router.tsx (rotas), ProtectedRoute e PublicOnlyRoute
-├── pages/                Uma página por rota (perfil ainda é placeholder: #15)
+├── pages/                Uma página por rota
 ├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (sidebar + topbar)
 ├── components/ui/        Componentes visuais base: Button, Input, Card, Spinner, Avatar
 ├── components/forms/     FormField (label, ajuda e erro para controles que não são o Input) e PasswordRules
+├── components/profile/   AvatarUploader (foto de perfil) e ProfileForm (dados do perfil)
 ├── contexts/             AuthContext.tsx (AuthProvider: mantém a sessão)
 ├── hooks/                useAuth (hook, tipo e contexto da sessão)
 ├── services/             Chamadas HTTP: api.ts (axios + CSRF + 401), authService, userService
-├── schemas/              Schemas Zod dos formulários (authSchemas.ts)
+├── schemas/              Schemas Zod dos formulários (authSchemas.ts, profileSchemas.ts)
 ├── types/                Tipos espelhando os schemas da API (user.ts)
 ├── utils/                Funções puras: apiError.ts (lê erros da API) e formatDate.ts (datas)
 └── test/                 Configuração e utilitários dos testes (setup.ts, auth.ts, apiError.ts)
@@ -144,6 +145,12 @@ Padrão usado no login e no cadastro, e o modelo para perfil (#15) e senha (#16)
 Exemplos completos: [`LoginPage.tsx`](src/pages/LoginPage.tsx), [`RegisterPage.tsx`](src/pages/RegisterPage.tsx) e [`ChangePasswordPage.tsx`](src/pages/ChangePasswordPage.tsx), com seus testes.
 
 Senha nova (cadastro, troca de senha): as regras de força ficam em `PASSWORD_RULES` e `passwordRule` de [`authSchemas.ts`](src/schemas/authSchemas.ts). Para mostrá-las enquanto o usuário digita, use `<PasswordRules password={valor} />` com o valor vindo de `useWatch` do React Hook Form.
+
+Campos do usuário (cadastro e perfil): as regras ficam em `userFieldRules` de [`authSchemas.ts`](src/schemas/authSchemas.ts), reaproveitadas pelo `profileSchema` de [`profileSchemas.ts`](src/schemas/profileSchemas.ts). Mude num lugar só.
+
+Edição parcial (`PATCH`): envie só o que mudou. O [`ProfileForm`](src/components/profile/ProfileForm.tsx) compara os dados do formulário com o usuário atual e manda um campo de texto apagado como `null`; o botão de salvar fica desabilitado enquanto nada mudou (`isDirty`).
+
+Upload de imagem: valide no navegador com `validateAvatarFile` (JPEG, PNG ou WebP, até 2 MB) antes de enviar; mostre o preview com `URL.createObjectURL` e libere a memória com `URL.revokeObjectURL`. O backend confere de novo pela assinatura real do arquivo (`INVALID_IMAGE`). Exemplo: [`AvatarUploader`](src/components/profile/AvatarUploader.tsx).
 
 ## Boas práticas (ARQ §7.6), checklist antes do PR
 
