@@ -57,6 +57,11 @@ PROFILE_ROLE="$(aws iam get-instance-profile \
   --query 'InstanceProfile.Roles[0].RoleName' --output text 2>/dev/null)" \
   || fail "Instance profile ${INSTANCE_PROFILE_NAME} não encontrado. Rode o report 03 antes."
 [ "${PROFILE_ROLE}" != "None" ] || fail "O instance profile ${INSTANCE_PROFILE_NAME} não tem role associada (report 03)."
+# Sem esta policy o agente não se registra e a EC2 fica sem acesso (não há SSH).
+ROLE_POLICIES="$(aws iam list-attached-role-policies --role-name "${PROFILE_ROLE}" \
+  --query 'AttachedPolicies[].PolicyName' --output text)"
+grep -qw AmazonSSMManagedInstanceCore <<<"${ROLE_POLICIES}" \
+  || fail "A role ${PROFILE_ROLE} não tem a policy AmazonSSMManagedInstanceCore. Rode o report 03 antes."
 
 EXISTING_INSTANCE="$(aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=${INSTANCE_NAME}" \
