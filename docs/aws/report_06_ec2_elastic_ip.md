@@ -185,7 +185,8 @@ Os containers sobem sozinhos ao ligar (`restart: unless-stopped` no `docker-comp
 
 | Problema | Solução |
 |---|---|
-| `<preencher: problemas da execução real>` | |
+| 1ª execução: o script parou em 4/5 (instância não ficou `Online` no Session Manager). `aws iam list-attached-role-policies --role-name proto1-ec2-role` veio **vazio**: a role existia e estava associada à EC2, mas sem nenhuma policy | O report 03 não tinha sido concluído. Anexar as policies rodando o `03_s3_iam_role.sh`. O `06_ec2.sh` passou a conferir a `AmazonSSMManagedInstanceCore` no bloco 0/5, **antes** de criar qualquer recurso |
+| 1ª execução: o user data parou no meio (`curl: (23) Failure writing output` no `get-console-output`): Docker e Compose instalados, mas sem Buildx, swap e clone | A versão do Buildx era lida com `curl \| grep -m1`; o `grep` fecha o pipe ao achar a 1ª linha, o `curl` falha e o `pipefail` aborta o script. A versão passou a ser lida do redirecionamento de `/releases/latest`, sem pipe |
 | A instância não fica `Online` no Session Manager | Conferir se o `proto1-ec2-role` tem a policy `AmazonSSMManagedInstanceCore` (report 03) e se a instância recebeu IP público (sem ele não há saída para a internet, pois não existe NAT) |
 | `permission denied` ao usar o Docker pelo Session Manager | A sessão abre como `ssm-user`, que não está no grupo `docker`. Usar `sudo docker ...` |
 | User data falhou | Ver `sudo cat /var/log/proto1-user-data.log`. O user data só roda no primeiro boot; para repetir, corrigir e rodar o script como root: `sudo bash /opt/proto1/infra/ec2/user-data.sh` |
