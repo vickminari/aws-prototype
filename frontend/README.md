@@ -59,10 +59,10 @@ src/
 ├── App.tsx               Providers globais + router
 ├── index.css             Entrada do Tailwind
 ├── routes/               router.tsx (rotas), ProtectedRoute e PublicOnlyRoute
-├── pages/                Uma página por rota (perfil e senha ainda são placeholders: #15 e #16)
+├── pages/                Uma página por rota (perfil ainda é placeholder: #15)
 ├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (sidebar + topbar)
 ├── components/ui/        Componentes visuais base: Button, Input, Card, Spinner, Avatar
-├── components/forms/     FormField: label, ajuda e erro para controles que não são o Input
+├── components/forms/     FormField (label, ajuda e erro para controles que não são o Input) e PasswordRules
 ├── contexts/             AuthContext.tsx (AuthProvider: mantém a sessão)
 ├── hooks/                useAuth (hook, tipo e contexto da sessão)
 ├── services/             Chamadas HTTP: api.ts (axios + CSRF + 401), authService, userService
@@ -141,7 +141,9 @@ Padrão usado no login e no cadastro, e o modelo para perfil (#15) e senha (#16)
    - `getValidationErrors(error)` → erros por campo de um 422.
    - Outros erros: `toast.error('...')`.
 
-Exemplos completos: [`LoginPage.tsx`](src/pages/LoginPage.tsx) e [`RegisterPage.tsx`](src/pages/RegisterPage.tsx), com seus testes.
+Exemplos completos: [`LoginPage.tsx`](src/pages/LoginPage.tsx), [`RegisterPage.tsx`](src/pages/RegisterPage.tsx) e [`ChangePasswordPage.tsx`](src/pages/ChangePasswordPage.tsx), com seus testes.
+
+Senha nova (cadastro, troca de senha): as regras de força ficam em `PASSWORD_RULES` e `passwordRule` de [`authSchemas.ts`](src/schemas/authSchemas.ts). Para mostrá-las enquanto o usuário digita, use `<PasswordRules password={valor} />` com o valor vindo de `useWatch` do React Hook Form.
 
 ## Boas práticas (ARQ §7.6), checklist antes do PR
 

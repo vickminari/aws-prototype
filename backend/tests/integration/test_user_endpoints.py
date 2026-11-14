@@ -87,7 +87,8 @@ def test_change_password_rejects_wrong_current_password(csrf_client, auth_user):
 
 @pytest.mark.parametrize(
     "new_password",
-    ["curta", DEFAULT_PASSWORD],
+    # Mesma política do cadastro: 8+ caracteres, ao menos uma letra e um número
+    ["curta", "somenteletras", "12345678", DEFAULT_PASSWORD],
 )
 def test_change_password_rejects_weak_or_repeated_password(csrf_client, auth_user, new_password):
     response = csrf_client.put(

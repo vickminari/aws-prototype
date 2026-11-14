@@ -8,6 +8,16 @@ export const loginSchema = z.object({
 
 export type LoginFormData = z.infer<typeof loginSchema>
 
+/**
+ * Regras de força da senha, para mostrar ao usuário enquanto ele digita. As mesmas
+ * do `passwordRule` abaixo; mude as duas juntas.
+ */
+export const PASSWORD_RULES = [
+  { label: 'Mínimo de 8 caracteres', test: (value: string) => value.length >= 8 },
+  { label: 'Ao menos uma letra', test: (value: string) => /\p{L}/u.test(value) },
+  { label: 'Ao menos um número', test: (value: string) => /\d/.test(value) },
+]
+
 /** Mesmas regras de força do backend: mín. 8 caracteres, ao menos 1 letra e 1 número. */
 const passwordRule = z
   .string()
@@ -45,3 +55,21 @@ export const registerSchema = z
   })
 
 export type RegisterFormData = z.infer<typeof registerSchema>
+
+/** Troca de senha: espelha `PasswordChange` (backend/app/schemas/user.py) + confirmação. */
+export const changePasswordSchema = z
+  .object({
+    current_password: z.string().min(1, 'Informe a senha atual'),
+    new_password: passwordRule,
+    confirmPassword: z.string().min(1, 'Confirme a nova senha'),
+  })
+  .refine((data) => data.new_password !== data.current_password, {
+    message: 'A nova senha deve ser diferente da atual',
+    path: ['new_password'],
+  })
+  .refine((data) => data.new_password === data.confirmPassword, {
+    message: 'As senhas não conferem',
+    path: ['confirmPassword'],
+  })
+
+export type ChangePasswordFormData = z.infer<typeof changePasswordSchema>
