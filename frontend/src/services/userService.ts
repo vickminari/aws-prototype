@@ -1,4 +1,4 @@
-import type { PasswordChange, UserProfileRead, UserRead, UserUpdate } from '../types/user.ts'
+import type { PasswordChange, UserProfileRead, UserUpdate } from '../types/user.ts'
 import { api } from './api.ts'
 
 interface GetMeOptions {
@@ -26,15 +26,15 @@ export async function changePassword(data: PasswordChange): Promise<void> {
 }
 
 /** Envia a foto de perfil como multipart (campo `file`). */
-export async function uploadAvatar(file: File): Promise<UserRead> {
+export async function uploadAvatar(file: File): Promise<UserProfileRead> {
   const form = new FormData()
   form.append('file', file)
-  const response = await api.post<UserRead>('/users/me/avatar', form)
+  const response = await api.post<UserProfileRead>('/users/me/avatar', form)
   return response.data
 }
 
 /** Remove a foto de perfil. */
-export async function deleteAvatar(): Promise<UserRead> {
-  const response = await api.delete<UserRead>('/users/me/avatar')
+export async function deleteAvatar(): Promise<UserProfileRead> {
+  const response = await api.delete<UserProfileRead>('/users/me/avatar')
   return response.data
 }
