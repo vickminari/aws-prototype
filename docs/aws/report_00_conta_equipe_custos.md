@@ -34,7 +34,6 @@ Nenhum. Este é o primeiro report.
 
 1. Conta criada em "Sign up for AWS (new)", no plano gratuito.
 2. MFA ativado no AWS Builder ID do proprietário.
-   ![MFA ativado](img/report_00_mfa.png)
 3. Projeto `proto1` em AWS Settings → **Projetos**.
 4. Região conferida em Projeto → Visão geral → Informações adicionais → Região: `us-east-2`.
 
