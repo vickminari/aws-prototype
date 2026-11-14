@@ -12,6 +12,13 @@ Username = Annotated[str, Field(min_length=3, max_length=30, pattern=r"^[a-zA-Z0
 Email = Annotated[EmailStr, Field(max_length=254)]
 
 
+def _check_password_strength(value: str) -> str:
+    """Política de senha do cadastro e da troca: ao menos uma letra e um número."""
+    if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
+        raise ValueError("A senha deve conter ao menos uma letra e um número")
+    return value
+
+
 class UserCreate(BaseModel):
     """Dados de cadastro; a normalização de email/username cabe ao service."""
 
@@ -47,9 +54,7 @@ class UserCreate(BaseModel):
     @classmethod
     def _validate_password(cls, value: str) -> str:
         """Exige uma letra e um número sem alterar a senha recebida."""
-        if not any(char.isalpha() for char in value) or not any(char.isdigit() for char in value):
-            raise ValueError("A senha deve conter ao menos uma letra e um número")
-        return value
+        return _check_password_strength(value)
 
 
 class UserRead(BaseModel):
@@ -108,5 +113,13 @@ class UserUpdate(BaseModel):
 class PasswordChange(BaseModel):
     """Dados necessários para trocar a senha do usuário."""
 
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     current_password: str
     new_password: str = Field(min_length=8)
+
+    @field_validator("new_password")
+    @classmethod
+    def _validate_new_password(cls, value: str) -> str:
+        """Mesma política do cadastro (`UserCreate`)."""
+        return _check_password_strength(value)
