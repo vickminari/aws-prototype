@@ -4,7 +4,7 @@
 |---|---|
 | Responsável | José Victor |
 | Issue | #20 |
-| Data | <!-- AAAA-MM-DD da execução --> |
+| Data | 2026-11-14 |
 | Projeto (AWS Settings) | `proto-tes` |
 | Região | `us-east-2` (Ohio) |
 | Como foi criado | Script `infra/scripts/04_rds.sh` no CloudShell (seção 4) |
@@ -57,7 +57,7 @@ São três barreiras independentes:
 | URL da aplicação | `/proto1/prod/DATABASE_URL` (SecureString), formato `postgresql+psycopg://proto1_admin:***@<endpoint>:5432/proto1` | Só o script conhece senha e endpoint juntos; assim a URL nunca é digitada nem impressa. Driver psycopg 3, igual ao `backend/.env.example` |
 | Backup automático | 1 dia | ARQ §8.6; o armazenamento de backup até o tamanho do banco não é cobrado |
 | Proteção contra exclusão | desligada | Facilita o teardown (report 08) |
-| Tags | `Name`, `Project=proto1`, `Owner=<!-- OWNER usado -->` (copiadas para os snapshots) | Convenção da ARQ §8.1 |
+| Tags | `Name`, `Project=proto1`, `Owner=Victor` (copiadas para os snapshots) | Convenção da ARQ §8.1 |
 
 ## 4. Passo a passo
 
@@ -82,20 +82,43 @@ O script tem 6 blocos (`0/5` a `5/5`):
 | 4/5 | Lê a senha do SSM e grava `/proto1/prod/DATABASE_URL` (não exibe) |
 | 5/5 | Mostra a configuração da instância e os parâmetros (sem valores) |
 
-<!-- Colar aqui a saída do script (blocos 0/5 a 4/5). Ela não contém a senha. -->
+```text
+==> 0/5 Localizando VPC, subnets privadas e proto1-sg-db
+    VPC_ID=vpc-0e3944afb658f063f
+    SUBNET_PRIVATE_A_ID=subnet-023892d705296676b
+    SUBNET_PRIVATE_B_ID=subnet-020a8aef6f5f3e5bd
+    SG_DB_ID=sg-035eab28e4158d2d8
+Região: us-east-2 · VPC: vpc-0e3944afb658f063f · SG: sg-035eab28e4158d2d8 · Owner: Victor
+
+==> 1/5 Criando o DB subnet group proto1-db-subnets
+    DB_SUBNET_GROUP=proto1-db-subnets
+
+==> 2/5 Gerando a senha e gravando em /proto1/rds/MASTER_PASSWORD (SecureString)
+    Senha gravada (não é exibida).
+
+==> 3/5 Criando a instância proto1-db (db.t4g.micro)
+    DB_ENGINE_VERSION=16.15
+    DB_INSTANCE_ID=proto1-db
+
+==>     Aguardando a instância ficar available (10 a 15 min; não feche o CloudShell)
+    DB_ENDPOINT=proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+
+==> 4/5 Gravando /proto1/prod/DATABASE_URL (SecureString)
+    DATABASE_URL gravada (não é exibida).
+```
 
 ### 4.2 Conferência no console (prints)
 
 1. **Aurora and RDS → Databases → `proto1-db`**, aba **Connectivity & security**: VPC `proto1-vpc`, subnet group `proto1-db-subnets`, SG `proto1-sg-db`, *Publicly accessible* **No**.
-   <!-- ![Conectividade do proto1-db](img/report_04_conectividade.png) -->
+   ![Conectividade do proto1-db](img/report_04_conectividade.png)
 2. Aba **Configuration**: engine 16.x, classe `db.t4g.micro`, 20 GB gp3, *Encryption* **Enabled**, *Storage autoscaling* **Disabled**, Multi-AZ **No**.
-   <!-- ![Configuração do proto1-db](img/report_04_configuracao.png) -->
+   ![Configuração do proto1-db](img/report_04_configuracao.png)
 3. Aba **Maintenance & backups**: *Automated backups* **1 day**, *Deletion protection* **Disabled**.
-   <!-- ![Backups do proto1-db](img/report_04_backups.png) -->
+   ![Backups do proto1-db](img/report_04_backups.png)
 4. **Subnet groups → `proto1-db-subnets`**: as duas subnets privadas, em `us-east-2a` e `us-east-2b`.
-   <!-- ![DB subnet group](img/report_04_subnet_group.png) -->
+   ![DB subnet group](img/report_04_subnet_group.png)
 5. **Systems Manager → Parameter Store**: `/proto1/rds/MASTER_PASSWORD` e `/proto1/prod/DATABASE_URL` como **SecureString**. **Não** clicar em *Show decrypted value* antes do print.
-   <!-- ![Parâmetros no Parameter Store](img/report_04_parameter_store.png) -->
+   ![Parâmetros no Parameter Store](img/report_04_parameter_store.png)
 
 ## 5. Equivalente via AWS CLI
 
@@ -117,9 +140,9 @@ aws ssm put-parameter --name /proto1/prod/DATABASE_URL --type SecureString --val
 
 | Recurso | Nome | ID / valor |
 |---|---|---|
-| DB subnet group | `proto1-db-subnets` | <!-- subnet-... , subnet-... --> |
-| Instância RDS | `proto1-db` | <!-- versão 16.x --> |
-| Endpoint | — | <!-- proto1-db.xxxx.us-east-2.rds.amazonaws.com:5432 --> |
+| DB subnet group | `proto1-db-subnets` | `subnet-023892d705296676b` (private-a), `subnet-020a8aef6f5f3e5bd` (private-b) |
+| Instância RDS | `proto1-db` | PostgreSQL 16.15, `db.t4g.micro`, us-east-2a |
+| Endpoint | — | `proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com:5432` |
 | Parâmetro SSM | `/proto1/rds/MASTER_PASSWORD` | SecureString |
 | Parâmetro SSM | `/proto1/prod/DATABASE_URL` | SecureString |
 
@@ -127,19 +150,46 @@ aws ssm put-parameter --name /proto1/prod/DATABASE_URL --type SecureString --val
 
 ### 7.1 Configuração da instância (bloco 5/5 do script)
 
-<!-- Colar a tabela do describe-db-instances. Conferir: PubliclyAccessible = False,
-     MultiAZ = False, Criptografado = True, MaxStorage = None, SG = proto1-sg-db. -->
-
 ```text
-
+==> 5/5 Verificação
+------------------------------------------------------------------------------
+|                             DescribeDBInstances                            |
++---------------------+------------------------------------------------------+
+|  AZ                 |  us-east-2a                                          |
+|  BackupDias         |  1                                                   |
+|  Classe             |  db.t4g.micro                                        |
+|  Criptografado      |  True                                                |
+|  Disco              |  gp3                                                 |
+|  Endpoint           |  proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com  |
+|  Engine             |  postgres                                            |
+|  Estado             |  available                                           |
+|  GB                 |  20                                                  |
+|  ID                 |  proto1-db                                           |
+|  MaxStorage         |  None                                                |
+|  MultiAZ            |  False                                               |
+|  Porta              |  5432                                                |
+|  ProtecaoExclusao   |  False                                               |
+|  PubliclyAccessible |  False                                               |
+|  SG                 |  sg-035eab28e4158d2d8                                |
+|  SubnetGroup        |  proto1-db-subnets                                   |
+|  Subnets            |  subnet-023892d705296676b,subnet-020a8aef6f5f3e5bd   |
+|  Versao             |  16.15                                               |
++---------------------+------------------------------------------------------+
 ```
 
 ### 7.2 Parâmetros sem valores (bloco 5/5 do script)
 
-<!-- Colar a tabela do get-parameters-by-path (sem --with-decryption: só nome e tipo). -->
-
 ```text
+-----------------------------------------------------------
+|                   GetParametersByPath                   |
++------------------------------+----------------+---------+
+|             Nome             |     Tipo       | Versao  |
++------------------------------+----------------+---------+
+|  /proto1/prod/DATABASE_URL   |  SecureString  |  1      |
+|  /proto1/rds/MASTER_PASSWORD |  SecureString  |  1      |
++------------------------------+----------------+---------+
 
+==> Pronto. IDs salvos em infra/.state/outputs.env (DB_INSTANCE_ID, DB_ENDPOINT, DB_SUBNET_GROUP).
 ```
 
 ### 7.3 Teste de conexão: acessível da EC2, inacessível da internet
@@ -154,10 +204,9 @@ getent hosts "$DB_ENDPOINT"     # resolve para um IP privado 10.0.11.x
 timeout 5 bash -c "</dev/tcp/$DB_ENDPOINT/5432" && echo "5432 ABERTA" || echo "5432 INACESSÍVEL"
 ```
 
-<!-- Colar a saída. Esperado: IP 10.0.11.x e "5432 INACESSÍVEL". -->
-
 ```text
-
+10.0.11.135     proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+5432 INACESSÍVEL
 ```
 
 **Da EC2** (Session Manager: **EC2 → proto1-app → Connect → Session Manager**):
@@ -168,13 +217,12 @@ getent hosts "$DB_ENDPOINT"
 timeout 5 bash -c "</dev/tcp/$DB_ENDPOINT/5432" && echo "5432 ABERTA" || echo "5432 INACESSÍVEL"
 ```
 
-<!-- Colar a saída. Esperado: o mesmo IP 10.0.11.x e "5432 ABERTA". -->
-
 ```text
-
+10.0.11.135     proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+5432 ABERTA
 ```
 
-<!-- ![Teste de conexão da EC2 e do CloudShell](img/report_04_teste_conexao.png) -->
+![Teste de conexão da EC2 e do CloudShell](img/report_04_teste_conexao.png)
 
 ### 7.4 `psql` da EC2 listando as tabelas
 
@@ -195,13 +243,24 @@ sudo docker run --rm postgres:16 psql "${DB_URL/+psycopg/}" -c '\dt' -c 'select 
 unset DB_URL
 ```
 
-<!-- Colar a saída. Esperado: alembic_version, revoked_tokens e users. -->
-
 ```text
+INFO  [alembic.runtime.migration] Running upgrade  -> 702cac72104f, cria tabelas users e revoked_tokens
+...
+                List of relations
+ Schema |      Name       | Type  |    Owner     
+--------+-----------------+-------+--------------
+ public | alembic_version | table | proto1_admin
+ public | revoked_tokens  | table | proto1_admin
+ public | users           | table | proto1_admin
+(3 rows)
 
+ PostgreSQL 16.15 on aarch64-unknown-linux-gnu, compiled by aarch64-unknown-linux-gnu-gcc (GCC) 12.4.0, 64-bit
+(1 row)
 ```
 
-<!-- ![psql na EC2](img/report_04_psql.png) -->
+A EC2 conectou no RDS pela rede privada, aplicou as migrações e listou as tabelas da aplicação. O servidor é o PostgreSQL 16.15 em Graviton (`aarch64`), como esperado para a classe `db.t4g.micro`.
+
+![psql na EC2](img/report_04_psql.png)
 
 ## 8. Como conectar / integrar
 
@@ -239,7 +298,6 @@ Atenção: o RDS **liga sozinho depois de 7 dias parado**. Com o banco parado, a
 
 | Problema | Solução |
 |---|---|
-| <!-- preencher após a execução --> | |
 | (Prevenção) O CloudShell fecha a sessão após ~20 min sem interação, e a espera do bloco 3/5 leva até 15 min | Apertar uma tecla de vez em quando. Se a sessão cair, o banco continua sendo criado e a senha já está no SSM: **não** rodar o script de novo (ele aborta porque o banco existe); usar o bloco de recuperação abaixo |
 
 **Recuperação** (só se a sessão caiu no bloco 3/5): grava a `DATABASE_URL` como o bloco 4/5, sem exibir nada.
