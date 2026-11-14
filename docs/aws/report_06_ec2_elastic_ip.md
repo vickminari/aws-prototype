@@ -4,7 +4,7 @@
 |---|---|
 | Responsável | Jailson Zarur |
 | Issue | #22 |
-| Data | `<preencher: AAAA-MM-DD da execução>` |
+| Data | 2026-11-14 |
 | Projeto (AWS Settings) | `proto-tes` |
 | Região | `us-east-2` (Ohio) |
 | Como foi criado | Script `infra/scripts/06_ec2.sh` no CloudShell (seção 4) |
@@ -64,19 +64,43 @@ O agente usa a permissão `AmazonSSMManagedInstanceCore` da role (report 03) e p
 
 ## 4. Passo a passo
 
-Executado no CloudShell, na raiz do repositório:
+Executado no CloudShell em 2026-11-14, na raiz do repositório:
 
 ```bash
-git clone https://github.com/vickminari/aws-prototype.git && cd aws-prototype
+git clone -b infra/22-ec2 https://github.com/vickminari/aws-prototype.git && cd aws-prototype
+export AWS_PAGER=""
 export OWNER=Jailson
 bash infra/scripts/06_ec2.sh
 ```
 
-Saída do script:
+Foram duas execuções:
 
-```text
-<preencher: colar a saída do script>
-```
+1. **Primeira:** criou a instância `i-068c9a02124239df8` e o Elastic IP `3.139.221.121`, mas parou no bloco 4/5 porque a `proto1-ec2-role` estava **sem policies** (report 03 incompleto) e o user data abortou no meio. Os dois problemas e as correções estão na seção 10.
+
+   ```text
+   ==> 0/5 Localizando VPC, subnet, security group e instance profile
+       VPC_ID=vpc-0e3944afb658f063f
+       SUBNET_PUBLIC_A_ID=subnet-020460f423e4aa900
+       SG_WEB_ID=sg-09b1318a081965dfc
+   Região: us-east-2 · Subnet: subnet-020460f423e4aa900 · SG: sg-09b1318a081965dfc · Role: proto1-ec2-role · Owner: Jailson
+
+   ==> 1/5 Buscando a AMI mais recente do Amazon Linux 2023
+       AMI_ID=ami-0df8a753693e6366d
+
+   ==> 2/5 Criando a instância proto1-app (t3.micro)
+       INSTANCE_ID=i-068c9a02124239df8
+
+   ==>     Aguardando a instância ficar running
+
+   ==> 3/5 Alocando o proto1-eip e associando à instância
+       EIP_ALLOCATION_ID=eipalloc-0e2b9422822470f9d
+       ELASTIC_IP=3.139.221.121
+
+   ==> 4/5 Aguardando a instância aparecer no Session Manager (até 10 min)
+   Erro: A instância não ficou Online no Session Manager. Veja a seção 10 do report 06.
+   ```
+
+2. **Correção e segunda execução:** o `03_s3_iam_role.sh` foi rodado de novo para anexar as policies da role; a instância e o Elastic IP da primeira tentativa foram apagados (comandos da seção 11); e o `06_ec2.sh` corrigido foi rodado de novo, agora até o fim. Resultado: instância **`i-0aef26cfc5b4bbb7f`** com o Elastic IP **`52.15.241.143`** (seções 6 e 7).
 
 No console, em **EC2 → Instances** e **EC2 → Elastic IPs**:
 
@@ -105,20 +129,58 @@ Os IDs ficam em `infra/.state/outputs.env` (`INSTANCE_ID`, `EIP_ALLOCATION_ID`, 
 
 | Recurso | Nome | ID |
 |---|---|---|
-| Instância EC2 | `proto1-app` | `<preencher: i-...>` |
-| Volume raiz (EBS) | `proto1-app-root` | `<preencher: vol-...>` |
-| Elastic IP | `proto1-eip` | `<preencher: eipalloc-...>` / `<preencher: IP>` |
-| AMI usada | Amazon Linux 2023 | `<preencher: ami-...>` |
+| Instância EC2 | `proto1-app` | `i-0aef26cfc5b4bbb7f` |
+| Volume raiz (EBS) | `proto1-app-root` | `vol-0e402bc3f8b4f7395` (20 GB, gp3, criptografado) |
+| Elastic IP | `proto1-eip` | `eipalloc-0bb1bc42c86ae9f31` / **`52.15.241.143`** |
+| AMI usada | Amazon Linux 2023 | `ami-0df8a753693e6366d` |
 
 ## 7. Verificação
 
-**Instância** (saída do bloco 5/5 do script):
+Executado no CloudShell em 2026-11-14.
+
+**Instância** (mesma consulta do bloco 5/5 do script):
 
 ```text
-<preencher: tabela do describe-instances>
+-----------------------------------------------------------------------------
+|                             DescribeInstances                             |
++-----------+---------------------------------------------------------------+
+|  AMI      |  ami-0df8a753693e6366d                                        |
+|  Estado   |  running                                                      |
+|  HopLimit |  2                                                            |
+|  ID       |  i-0aef26cfc5b4bbb7f                                          |
+|  IMDSv2   |  required                                                     |
+|  IpPrivado|  10.0.1.241                                                   |
+|  IpPublico|  52.15.241.143                                                |
+|  Role     |  arn:aws:iam::490711050705:instance-profile/proto1-ec2-role   |
+|  SG       |  proto1-sg-web                                                |
+|  Subnet   |  subnet-020460f423e4aa900                                     |
+|  Tipo     |  t3.micro                                                     |
++-----------+---------------------------------------------------------------+
 ```
 
-Conferir: `IMDSv2 = required`, `HopLimit = 2`, `SG = proto1-sg-web`, `IpPublico` igual ao Elastic IP.
+`IMDSv2 = required`, `HopLimit = 2`, `SG = proto1-sg-web` e o `IpPublico` é o Elastic IP.
+
+**Elastic IP e disco:**
+
+```bash
+aws ec2 describe-addresses --filters "Name=tag:Name,Values=proto1-eip" \
+  --query 'Addresses[].{EIP:PublicIp,Allocation:AllocationId,Instancia:InstanceId}' --output table
+aws ec2 describe-volumes --filters "Name=attachment.instance-id,Values=i-0aef26cfc5b4bbb7f" \
+  --query 'Volumes[].{Volume:VolumeId,GB:Size,Tipo:VolumeType,Criptografado:Encrypted}' --output table
+```
+
+```text
++-----------------------------+----------------+-----------------------+
+|         Allocation          |      EIP       |       Instancia       |
++-----------------------------+----------------+-----------------------+
+|  eipalloc-0bb1bc42c86ae9f31 |  52.15.241.143 |  i-0aef26cfc5b4bbb7f  |
++-----------------------------+----------------+-----------------------+
++----------------+-----+-------+-------------------------+
+|  Criptografado | GB  | Tipo  |         Volume          |
++----------------+-----+-------+-------------------------+
+|  True          |  20 |  gp3  |  vol-0e402bc3f8b4f7395  |
++----------------+-----+-------+-------------------------+
+```
 
 **Dentro da EC2**, pelo Session Manager (`aws ssm start-session --target <INSTANCE_ID>` no CloudShell, ou **Connect → Session Manager** no console):
 
@@ -132,8 +194,29 @@ ls /opt/proto1                         # repositório clonado
 ```
 
 ```text
-<preencher: saída dos comandos acima>
+sh-5.2$ sudo cloud-init status --wait
+status: done
+sh-5.2$ ls /var/lib/proto1/user-data.done
+/var/lib/proto1/user-data.done
+sh-5.2$ docker compose version
+Docker Compose version v5.7.1
+sh-5.2$ docker buildx version
+github.com/docker/buildx v0.39.0 360040a78d6113dc84e5d4dcdf0f438e1be7a41f
+sh-5.2$ free -h
+               total        used        free      shared  buff/cache   available
+Mem:           913Mi       254Mi        69Mi       0.0Ki       588Mi       497Mi
+Swap:          2.0Gi       0.0Ki       2.0Gi
+sh-5.2$ aws sts get-caller-identity
+{
+    "UserId": "AROAXEQFINHIZKTDA3V4B:i-0aef26cfc5b4bbb7f",
+    "Account": "490711050705",
+    "Arn": "arn:aws:sts::490711050705:assumed-role/proto1-ec2-role/i-0aef26cfc5b4bbb7f"
+}
+sh-5.2$ ls /opt/proto1
+CONTRIBUTING.md  README.md  backend  docker-compose.prod.yml  docker-compose.yml  docs  frontend  infra
 ```
+
+O user data terminou (`status: done`), com Compose, Buildx e 2 GB de swap instalados e o repositório clonado. A instância usa a role `proto1-ec2-role` sem nenhuma chave guardada na máquina.
 
 **Credenciais da role dentro de um container** (comprova o hop limit 2, necessário para a API acessar o S3):
 
@@ -142,7 +225,22 @@ sudo docker run --rm public.ecr.aws/aws-cli/aws-cli sts get-caller-identity
 ```
 
 ```text
-<preencher: deve mostrar o mesmo Arn assumed-role/proto1-ec2-role>
+{
+    "UserId": "AROAXEQFINHIZKTDA3V4B:i-0aef26cfc5b4bbb7f",
+    "Account": "490711050705",
+    "Arn": "arn:aws:sts::490711050705:assumed-role/proto1-ec2-role/i-0aef26cfc5b4bbb7f"
+}
+```
+
+O container recebe o mesmo `assumed-role/proto1-ec2-role` da máquina: a API, que também roda em container, consegue usar a role para acessar o S3.
+
+**Privilégio mínimo:** de dentro da EC2, a role não consegue nem listar recursos da conta. Se a máquina fosse invadida, as credenciais dela só serviriam para o bucket de avatares e os parâmetros `/proto1/*`:
+
+```text
+sh-5.2$ aws ec2 describe-instances --instance-ids i-0aef26cfc5b4bbb7f
+aws: [ERROR]: An error occurred (UnauthorizedOperation) when calling the DescribeInstances operation:
+You are not authorized to perform this operation. User: arn:aws:sts::490711050705:assumed-role/proto1-ec2-role/i-0aef26cfc5b4bbb7f
+is not authorized to perform: ec2:DescribeInstances because no identity-based policy allows the ec2:DescribeInstances action
 ```
 
 ### Teste de conexão com o RDS (pendente: depende da #20)
@@ -187,6 +285,7 @@ Os containers sobem sozinhos ao ligar (`restart: unless-stopped` no `docker-comp
 |---|---|
 | 1ª execução: o script parou em 4/5 (instância não ficou `Online` no Session Manager). `aws iam list-attached-role-policies --role-name proto1-ec2-role` veio **vazio**: a role existia e estava associada à EC2, mas sem nenhuma policy | O report 03 não tinha sido concluído. Anexar as policies rodando o `03_s3_iam_role.sh`. O `06_ec2.sh` passou a conferir a `AmazonSSMManagedInstanceCore` no bloco 0/5, **antes** de criar qualquer recurso |
 | 1ª execução: o user data parou no meio (`curl: (23) Failure writing output` no `get-console-output`): Docker e Compose instalados, mas sem Buildx, swap e clone | A versão do Buildx era lida com `curl \| grep -m1`; o `grep` fecha o pipe ao achar a 1ª linha, o `curl` falha e o `pipefail` aborta o script. A versão passou a ser lida do redirecionamento de `/releases/latest`, sem pipe |
+| `UnauthorizedOperation` ao rodar `aws ec2 describe-*` | Os comandos foram rodados **dentro da EC2** (prompt `sh-5.2$` do Session Manager), onde valem as permissões da `proto1-ec2-role`. Consultas à conta rodam no **CloudShell** (fora da EC2), com o login de cada membro. O erro é esperado (seção 7, privilégio mínimo) |
 | A instância não fica `Online` no Session Manager | Conferir se o `proto1-ec2-role` tem a policy `AmazonSSMManagedInstanceCore` (report 03) e se a instância recebeu IP público (sem ele não há saída para a internet, pois não existe NAT) |
 | `permission denied` ao usar o Docker pelo Session Manager | A sessão abre como `ssm-user`, que não está no grupo `docker`. Usar `sudo docker ...` |
 | User data falhou | Ver `sudo cat /var/log/proto1-user-data.log`. O user data só roda no primeiro boot; para repetir, corrigir e rodar o script como root: `sudo bash /opt/proto1/infra/ec2/user-data.sh` |
