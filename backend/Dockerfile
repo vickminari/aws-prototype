@@ -20,6 +20,9 @@ COPY alembic ./alembic
 COPY entrypoint.sh ./
 RUN chmod +x entrypoint.sh
 
+# Storage local (STORAGE_BACKEND=local): a API cria arquivos em /app/media ao iniciar
+RUN mkdir -p /app/media && chown appuser:appuser /app/media
+
 USER appuser
 EXPOSE 8000
 

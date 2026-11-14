@@ -59,8 +59,8 @@ src/
 ├── App.tsx               Providers globais + router
 ├── index.css             Entrada do Tailwind
 ├── routes/               router.tsx (rotas), ProtectedRoute e PublicOnlyRoute
-├── pages/                Uma página por rota (login e cadastro prontos; as demais são placeholders)
-├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (#14)
+├── pages/                Uma página por rota (perfil e senha ainda são placeholders: #15 e #16)
+├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (sidebar + topbar)
 ├── components/ui/        Componentes visuais base: Button, Input, Card, Spinner, Avatar
 ├── components/forms/     FormField: label, ajuda e erro para controles que não são o Input
 ├── contexts/             AuthContext.tsx (AuthProvider: mantém a sessão)
@@ -68,7 +68,7 @@ src/
 ├── services/             Chamadas HTTP: api.ts (axios + CSRF + 401), authService, userService
 ├── schemas/              Schemas Zod dos formulários (authSchemas.ts)
 ├── types/                Tipos espelhando os schemas da API (user.ts)
-├── utils/                Funções puras: apiError.ts (lê erros da API); formatDate (#14)
+├── utils/                Funções puras: apiError.ts (lê erros da API) e formatDate.ts (datas)
 └── test/                 Configuração e utilitários dos testes (setup.ts, auth.ts, apiError.ts)
 ```
 
@@ -84,7 +84,13 @@ src/
 | `/`                   | —            | `/dashboard` ou `/login` | #12                  |
 | `*`                   | —            | `NotFoundPage`           | #14                  |
 
-Rotas "só deslogado" ficam dentro de `PublicOnlyRoute` (com sessão → `/dashboard`); rotas protegidas, dentro de `ProtectedRoute` (sem sessão → `/login`). Nova página protegida? Adicione-a nos `children` do `ProtectedRoute` em [`router.tsx`](src/routes/router.tsx).
+Rotas "só deslogado" ficam dentro de `PublicOnlyRoute` (com sessão → `/dashboard`); rotas protegidas, dentro de `ProtectedRoute` (sem sessão → `/login`). Nova página do dashboard? Adicione-a nos `children` do `DashboardLayout` em [`router.tsx`](src/routes/router.tsx): ela já aparece com a sidebar e a topbar.
+
+### Dashboard
+
+O [`DashboardLayout`](src/layouts/DashboardLayout.tsx) envolve as rotas `/dashboard/*`: sidebar com **Início**, **Meu perfil**, **Alterar senha** e **Sair** (item da rota atual destacado), topbar com avatar e nome, e o conteúdo da página no `<Outlet />`. No celular a sidebar vira um menu aberto pelo botão da topbar. **Sair** chama `logout()` e só volta para `/login` se o servidor confirmar; em falha de rede mostra um toast e mantém a sessão. Cada página do dashboard tem o próprio `<h1>` e não precisa de `<main>` nem de fundo: o layout já fornece.
+
+Datas da API chegam em UTC; exiba com `formatDate(iso)` de [`utils/formatDate.ts`](src/utils/formatDate.ts), que usa o fuso `America/Fortaleza` (ex.: `"7 de novembro de 2026"`).
 
 ## Autenticação
 
