@@ -102,13 +102,17 @@ Foram duas execuções:
 
 2. **Correção e segunda execução:** o `03_s3_iam_role.sh` foi rodado de novo para anexar as policies da role; a instância e o Elastic IP da primeira tentativa foram apagados (comandos da seção 11); e o `06_ec2.sh` corrigido foi rodado de novo, agora até o fim. Resultado: instância **`i-0aef26cfc5b4bbb7f`** com o Elastic IP **`52.15.241.143`** (seções 6 e 7).
 
-No console, em **EC2 → Instances** e **EC2 → Elastic IPs**:
+No console, em **EC2 → Instances**, a `proto1-app` está *Running* com os 3 status checks aprovados, na `us-east-2a` e com o DNS público do Elastic IP:
 
-<!-- Prints a anexar em docs/aws/img/:
-![Instância proto1-app em execução](img/report_06_instancia.png)
-![Elastic IP proto1-eip associado à instância](img/report_06_eip.png)
-![Terminal aberto pelo Session Manager](img/report_06_session_manager.png)
--->
+![Instância proto1-app em execução, t3.micro, 3/3 checks](img/report_06_instancia.png)
+
+Em **EC2 → Elastic IPs**, o `proto1-eip` (`52.15.241.143`):
+
+![Elastic IP proto1-eip 52.15.241.143](img/report_06_eip.png)
+
+E o terminal aberto em **proto1-app → Connect → Session Manager**, sem SSH e sem chave:
+
+![Terminal do Session Manager na instância i-0aef26cfc5b4bbb7f](img/report_06_session_manager.png)
 
 ## 5. Equivalente via AWS CLI
 
