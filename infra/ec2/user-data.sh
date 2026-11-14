@@ -23,8 +23,11 @@ usermod -aG docker ec2-user
 mkdir -p "${PLUGINS_DIR}"
 curl -fsSL -o "${PLUGINS_DIR}/docker-compose" \
   "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64"
-BUILDX_VERSION="$(curl -fsSL https://api.github.com/repos/docker/buildx/releases/latest \
-  | grep -m1 '"tag_name"' | cut -d'"' -f4)"
+# A versão sai do redirecionamento de /releases/latest para /releases/tag/vX.Y.Z.
+# Não usar "curl | grep -m1": o grep fecha o pipe cedo, o curl falha (erro 23) e o
+# pipefail aborta o user data.
+BUILDX_VERSION="$(basename "$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+  https://github.com/docker/buildx/releases/latest)")"
 curl -fsSL -o "${PLUGINS_DIR}/docker-buildx" \
   "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.linux-amd64"
 chmod +x "${PLUGINS_DIR}/docker-compose" "${PLUGINS_DIR}/docker-buildx"
