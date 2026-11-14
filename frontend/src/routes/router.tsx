@@ -1,4 +1,5 @@
 import { Navigate, createBrowserRouter, type RouteObject } from 'react-router'
+import { DashboardLayout } from '../layouts/DashboardLayout.tsx'
 import { ChangePasswordPage } from '../pages/ChangePasswordPage.tsx'
 import { DashboardHomePage } from '../pages/DashboardHomePage.tsx'
 import { LoginPage } from '../pages/LoginPage.tsx'
@@ -10,7 +11,7 @@ import { PublicOnlyRoute } from './PublicOnlyRoute.tsx'
 
 /**
  * Rotas da ARQ §7.3. Exportadas à parte para os testes montarem com `createMemoryRouter`.
- * O `DashboardLayout` entra na #14.
+ * As páginas do dashboard ficam dentro do `DashboardLayout` (sidebar + topbar).
  */
 export const routes: RouteObject[] = [
   {
@@ -25,9 +26,14 @@ export const routes: RouteObject[] = [
     children: [
       // Sem sessão, o ProtectedRoute leva para /login; com sessão, vai para o dashboard.
       { path: '/', element: <Navigate to="/dashboard" replace /> },
-      { path: '/dashboard', element: <DashboardHomePage /> },
-      { path: '/dashboard/profile', element: <ProfilePage /> },
-      { path: '/dashboard/password', element: <ChangePasswordPage /> },
+      {
+        element: <DashboardLayout />,
+        children: [
+          { path: '/dashboard', element: <DashboardHomePage /> },
+          { path: '/dashboard/profile', element: <ProfilePage /> },
+          { path: '/dashboard/password', element: <ChangePasswordPage /> },
+        ],
+      },
     ],
   },
   { path: '*', element: <NotFoundPage /> },
