@@ -46,4 +46,3 @@ class StorageService(ABC):
         """Return a public (or pre‑signed) URL for the stored object.
         For the local backend this is a relative path under ``/api/media``.
         """
-

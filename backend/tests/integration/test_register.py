@@ -22,9 +22,9 @@ def registration_data():
 
 @pytest.mark.parametrize("description", [None, "Descrição do perfil"])
 def test_register_returns_201_with_public_user_and_persists_hash(
-    client, db_session, registration_data, description
+    csrf_client, db_session, registration_data, description
 ):
-    response = client.post(REGISTER_URL, json=registration_data | {"description": description})
+    response = csrf_client.post(REGISTER_URL, json=registration_data | {"description": description})
 
     assert response.status_code == 201
     body = response.json()
@@ -52,8 +52,8 @@ def test_register_returns_201_with_public_user_and_persists_hash(
     assert "set-cookie" not in response.headers
 
 
-def test_register_without_description_returns_null(client, registration_data):
-    response = client.post(REGISTER_URL, json=registration_data)
+def test_register_without_description_returns_null(csrf_client, registration_data):
+    response = csrf_client.post(REGISTER_URL, json=registration_data)
 
     assert response.status_code == 201
     assert response.json()["description"] is None
@@ -85,11 +85,11 @@ def test_register_without_description_returns_null(client, registration_data):
     ],
 )
 def test_register_with_duplicate_identity_returns_409(
-    client, db_session, user_factory, registration_data, field, value, expected_body
+    csrf_client, db_session, user_factory, registration_data, field, value, expected_body
 ):
     user_factory(username="maria.silva", email="maria@example.com")
 
-    response = client.post(REGISTER_URL, json=registration_data | {field: value})
+    response = csrf_client.post(REGISTER_URL, json=registration_data | {field: value})
 
     assert response.status_code == 409
     assert response.json() == expected_body
@@ -112,9 +112,9 @@ def test_register_with_duplicate_identity_returns_409(
     ],
 )
 def test_register_with_invalid_field_returns_422_without_persisting(
-    client, db_session, registration_data, field, value
+    csrf_client, db_session, registration_data, field, value
 ):
-    response = client.post(REGISTER_URL, json=registration_data | {field: value})
+    response = csrf_client.post(REGISTER_URL, json=registration_data | {field: value})
 
     assert response.status_code == 422
     assert "password" not in registration_data or registration_data["password"] not in response.text
@@ -122,20 +122,20 @@ def test_register_with_invalid_field_returns_422_without_persisting(
 
 
 @pytest.mark.parametrize("field", ["full_name", "username", "email", "password"])
-def test_register_with_missing_required_field_returns_422(client, registration_data, field):
+def test_register_with_missing_required_field_returns_422(csrf_client, registration_data, field):
     del registration_data[field]
 
-    response = client.post(REGISTER_URL, json=registration_data)
+    response = csrf_client.post(REGISTER_URL, json=registration_data)
 
     assert response.status_code == 422
     if "password" in registration_data:
         assert registration_data["password"] not in response.text
 
 
-def test_register_validation_error_does_not_echo_password(client, registration_data):
+def test_register_validation_error_does_not_echo_password(csrf_client, registration_data):
     password = "senhaSecretaSemNumeros"
 
-    response = client.post(REGISTER_URL, json=registration_data | {"password": password})
+    response = csrf_client.post(REGISTER_URL, json=registration_data | {"password": password})
 
     assert response.status_code == 422
     assert password not in response.text
@@ -144,8 +144,8 @@ def test_register_validation_error_does_not_echo_password(client, registration_d
     assert all(set(error) == {"loc", "msg", "type"} for error in errors)
 
 
-def test_register_is_documented_as_public_with_expected_responses(client):
-    response = client.get("/api/openapi.json")
+def test_register_is_documented_as_public_with_expected_responses(csrf_client):
+    response = csrf_client.get("/api/openapi.json")
 
     assert response.status_code == 200
     operation = response.json()["paths"][REGISTER_URL]["post"]
@@ -162,10 +162,10 @@ def test_register_is_documented_as_public_with_expected_responses(client):
     assert examples["username"]["value"]["code"] == "USERNAME_ALREADY_EXISTS"
 
 
-def test_register_with_invalid_json_returns_422_without_echoing_body(client):
+def test_register_with_invalid_json_returns_422_without_echoing_body(csrf_client):
     password = "Senha-secreta-123"
 
-    response = client.post(
+    response = csrf_client.post(
         REGISTER_URL,
         content='{"password": "' + password + '",',
         headers={"Content-Type": "application/json"},

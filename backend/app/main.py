@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -16,6 +16,7 @@ from app.core.exceptions import (
     DomainError,
     EmailAlreadyExistsError,
     InvalidCredentialsError,
+    InvalidCsrfTokenError,
     InvalidImageError,
     InvalidPasswordError,
     InvalidTokenError,
@@ -23,7 +24,7 @@ from app.core.exceptions import (
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
-from app.dependencies import get_storage
+from app.dependencies import get_storage, require_csrf
 from app.schemas.error import ValidationErrorRead, ValidationIssue, error_response
 from app.services.storage import create_storage
 
@@ -35,6 +36,7 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     EmailAlreadyExistsError: 409,
     UsernameAlreadyExistsError: 409,
     InvalidCredentialsError: 401,
+    InvalidCsrfTokenError: 403,
     InvalidTokenError: 401,
     WrongPasswordError: 400,
     InvalidPasswordError: 422,
@@ -45,6 +47,7 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
 DEFAULT_DOMAIN_ERROR_STATUS = 400
 INTERNAL_ERROR_DETAIL = "Erro interno do servidor"
 INTERNAL_ERROR_CODE = "INTERNAL_ERROR"
+AUTH_CHALLENGE = 'Cookie realm="api"'
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +61,9 @@ def _status_for(exc: DomainError) -> int:
 
 async def domain_error_handler(request: Request, exc: DomainError) -> JSONResponse:
     status_code = _status_for(exc)
-    # RFC 6750: respostas 401 indicam o esquema de autenticação esperado
-    headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
+    # RFC 9110 exige um desafio no 401. A sessão é só o cookie HttpOnly; anunciar Bearer
+    # levaria clientes a tentar um mecanismo que a API não aceita.
+    headers = {"WWW-Authenticate": AUTH_CHALLENGE} if status_code == 401 else None
     return JSONResponse(
         status_code=status_code,
         content={"detail": exc.message, "code": exc.code},
@@ -107,6 +111,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url=f"{API_PREFIX}/docs",
         openapi_url=f"{API_PREFIX}/openapi.json",
         redoc_url=None,
+        # CSRF por padrão: toda escrita (POST/PUT/PATCH/DELETE), inclusive rotas futuras,
+        # exige origem confiável e X-CSRF-Token. Roda antes da autenticação e do handler;
+        # o FastAPI já leu e validou o corpo, mas nada é executado sem CSRF válido.
+        dependencies=[Depends(require_csrf)],
         responses={
             500: error_response(
                 "Erro inesperado no servidor",
@@ -115,6 +123,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         },
     )
+
+    # Dependências HTTP usam a mesma configuração da instância da aplicação.
+    app.dependency_overrides[get_settings] = lambda: settings
 
     if settings.cors_origins:
         app.add_middleware(

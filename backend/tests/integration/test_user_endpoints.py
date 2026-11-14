@@ -9,8 +9,8 @@ from app.core.security import verify_password
 DEFAULT_PASSWORD = "Senha-de-teste-123"
 
 
-def test_get_me_returns_user_data_and_created_at(client, auth_user):
-    response = client.get("/api/users/me")
+def test_get_me_returns_user_data_and_created_at(csrf_client, auth_user):
+    response = csrf_client.get("/api/users/me")
 
     assert response.status_code == 200
     data = response.json()
@@ -24,14 +24,14 @@ def test_get_me_returns_user_data_and_created_at(client, auth_user):
     assert datetime.fromisoformat(data["created_at"].replace("Z", "+00:00")) == auth_user.created_at
 
 
-def test_patch_me_updates_only_sent_fields(client, auth_user):
+def test_patch_me_updates_only_sent_fields(csrf_client, auth_user):
     original = {
         "username": auth_user.username,
         "email": auth_user.email,
         "description": auth_user.description,
     }
 
-    response = client.patch("/api/users/me", json={"full_name": "Nome atualizado"})
+    response = csrf_client.patch("/api/users/me", json={"full_name": "Nome atualizado"})
 
     assert response.status_code == 200
     data = response.json()
@@ -41,26 +41,26 @@ def test_patch_me_updates_only_sent_fields(client, auth_user):
     assert data["description"] == original["description"]
 
 
-def test_patch_me_rejects_email_used_by_another_user(client, auth_user, user_factory):
+def test_patch_me_rejects_email_used_by_another_user(csrf_client, auth_user, user_factory):
     other_user = user_factory()
 
-    response = client.patch("/api/users/me", json={"email": other_user.email})
+    response = csrf_client.patch("/api/users/me", json={"email": other_user.email})
 
     assert response.status_code == 409
     assert response.json()["code"] == "EMAIL_ALREADY_EXISTS"
 
 
-def test_patch_me_allows_own_email(client, auth_user):
-    response = client.patch("/api/users/me", json={"email": auth_user.email})
+def test_patch_me_allows_own_email(csrf_client, auth_user):
+    response = csrf_client.patch("/api/users/me", json={"email": auth_user.email})
 
     assert response.status_code == 200
     assert response.json()["email"] == auth_user.email
 
 
-def test_patch_me_does_not_change_created_at(client, auth_user):
+def test_patch_me_does_not_change_created_at(csrf_client, auth_user):
     original_created_at = auth_user.created_at
 
-    response = client.patch(
+    response = csrf_client.patch(
         "/api/users/me",
         json={"created_at": datetime(2000, 1, 1).isoformat()},
     )
@@ -72,8 +72,8 @@ def test_patch_me_does_not_change_created_at(client, auth_user):
     )
 
 
-def test_change_password_rejects_wrong_current_password(client, auth_user):
-    response = client.put(
+def test_change_password_rejects_wrong_current_password(csrf_client, auth_user):
+    response = csrf_client.put(
         "/api/users/me/password",
         json={
             "current_password": "senha-incorreta",
@@ -89,8 +89,8 @@ def test_change_password_rejects_wrong_current_password(client, auth_user):
     "new_password",
     ["curta", DEFAULT_PASSWORD],
 )
-def test_change_password_rejects_weak_or_repeated_password(client, auth_user, new_password):
-    response = client.put(
+def test_change_password_rejects_weak_or_repeated_password(csrf_client, auth_user, new_password):
+    response = csrf_client.put(
         "/api/users/me/password",
         json={
             "current_password": DEFAULT_PASSWORD,
@@ -101,10 +101,10 @@ def test_change_password_rejects_weak_or_repeated_password(client, auth_user, ne
     assert response.status_code == 422
 
 
-def test_change_password_updates_hash_and_returns_no_content(client, auth_user):
+def test_change_password_updates_hash_and_returns_no_content(csrf_client, auth_user):
     new_password = "NovaSenha-de-teste-456!"
 
-    response = client.put(
+    response = csrf_client.put(
         "/api/users/me/password",
         json={
             "current_password": DEFAULT_PASSWORD,
@@ -115,3 +115,19 @@ def test_change_password_updates_hash_and_returns_no_content(client, auth_user):
     assert response.status_code == 204
     assert response.content == b""
     assert verify_password(new_password, auth_user.hashed_password)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [{"username": "vitima@example.com"}, {"email": "vitima"}, {"username": None}],
+)
+def test_patch_me_rejects_identity_that_could_collide_on_login(
+    csrf_client, auth_user, db_session, payload
+):
+    original = (auth_user.username, auth_user.email)
+
+    response = csrf_client.patch("/api/users/me", json=payload)
+
+    assert response.status_code == 422
+    db_session.refresh(auth_user)
+    assert (auth_user.username, auth_user.email) == original

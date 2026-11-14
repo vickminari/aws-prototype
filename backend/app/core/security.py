@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 import jwt
 from pwdlib import PasswordHash
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.core.exceptions import InvalidTokenError
 
 _password_hash = PasswordHash.recommended()
@@ -24,9 +24,9 @@ def verify_password(password: str, hashed_password: str) -> bool:
     return _password_hash.verify(password, hashed_password)
 
 
-def create_access_token(user_id: UUID) -> str:
+def create_access_token(user_id: UUID, *, settings: Settings | None = None) -> str:
     """Assina um JWT com o UUID do usuário em sub, ID único e validade configurada."""
-    settings = get_settings()
+    settings = settings or get_settings()
     now = datetime.now(UTC)
     return jwt.encode(
         {
@@ -40,7 +40,7 @@ def create_access_token(user_id: UUID) -> str:
     )
 
 
-def decode_access_token(token: str) -> dict[str, Any]:
+def decode_access_token(token: str, *, settings: Settings | None = None) -> dict[str, Any]:
     """Valida assinatura, algoritmo, campos obrigatórios e validade do JWT.
 
     Raises:
@@ -52,7 +52,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(
             token,
-            get_settings().jwt_secret,
+            (settings or get_settings()).jwt_secret,
             algorithms=[_JWT_ALGORITHM],
             options={"require": ["sub", "jti", "iat", "exp"]},
         )

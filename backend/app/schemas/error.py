@@ -2,7 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.core.exceptions import DomainError
+from app.core.exceptions import DomainError, InvalidCsrfTokenError, InvalidTokenError
 
 
 class ErrorRead(BaseModel):
@@ -48,3 +48,11 @@ def error_response(
         "description": description,
         "content": {"application/json": {"example": {"detail": detail, "code": code}}},
     }
+
+
+# Respostas repetidas nas rotas protegidas e em todas as escritas (CSRF global em create_app).
+UNAUTHENTICATED_RESPONSE = error_response("Não autenticado", InvalidTokenError)
+CSRF_FAILURE_RESPONSE = error_response(
+    "Origem não confiável ou X-CSRF-Token ausente, inválido ou de outra sessão",
+    InvalidCsrfTokenError,
+)

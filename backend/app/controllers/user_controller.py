@@ -1,10 +1,9 @@
 from fastapi import APIRouter, Depends, File, Response, UploadFile
 from sqlalchemy.orm import Session
 
-from app.core.exceptions import InvalidTokenError
 from app.dependencies import get_current_user, get_db, get_storage
 from app.models import User
-from app.schemas.error import error_response
+from app.schemas.error import CSRF_FAILURE_RESPONSE, UNAUTHENTICATED_RESPONSE
 from app.schemas.user import PasswordChange, UserProfileRead, UserUpdate
 from app.services import user_service
 from app.services.storage import StorageService
@@ -16,7 +15,7 @@ router = APIRouter(prefix="/users", tags=["users"])
     "/me",
     response_model=UserProfileRead,
     summary="Retorna o usuário logado",
-    responses={401: error_response("Não autenticado", InvalidTokenError)},
+    responses={401: UNAUTHENTICATED_RESPONSE},
 )
 def read_me(
     current_user: User = Depends(get_current_user),
@@ -29,7 +28,7 @@ def read_me(
     "/me",
     response_model=UserProfileRead,
     summary="Atualiza o perfil do usuário logado",
-    responses={401: error_response("Não autenticado", InvalidTokenError)},
+    responses={401: UNAUTHENTICATED_RESPONSE, 403: CSRF_FAILURE_RESPONSE},
 )
 def update_me(
     payload: UserUpdate,
@@ -44,7 +43,7 @@ def update_me(
     "/me/password",
     status_code=204,
     summary="Troca a senha do usuário logado",
-    responses={401: error_response("Não autenticado", InvalidTokenError)},
+    responses={401: UNAUTHENTICATED_RESPONSE, 403: CSRF_FAILURE_RESPONSE},
 )
 def change_password(
     payload: PasswordChange,
@@ -55,7 +54,12 @@ def change_password(
     return Response(status_code=204)
 
 
-@router.post("/me/avatar", response_model=UserProfileRead, summary="Atualiza a imagem de perfil")
+@router.post(
+    "/me/avatar",
+    response_model=UserProfileRead,
+    summary="Atualiza a imagem de perfil",
+    responses={401: UNAUTHENTICATED_RESPONSE, 403: CSRF_FAILURE_RESPONSE},
+)
 async def upload_avatar(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
@@ -66,7 +70,12 @@ async def upload_avatar(
     return user_service.to_read(updated, storage)
 
 
-@router.delete("/me/avatar", response_model=UserProfileRead, summary="Remove a imagem de perfil")
+@router.delete(
+    "/me/avatar",
+    response_model=UserProfileRead,
+    summary="Remove a imagem de perfil",
+    responses={401: UNAUTHENTICATED_RESPONSE, 403: CSRF_FAILURE_RESPONSE},
+)
 def delete_avatar(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

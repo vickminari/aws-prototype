@@ -88,6 +88,33 @@ Incluir a proteção na #9, antes da integração com o frontend:
 Detalhes internos do formato e armazenamento auxiliar serão implementados e
 testados na #9. Documentar as novas variáveis de ambiente nessa entrega.
 
+Configuração definida na etapa 2 da #9: `CSRF_SECRET` (segredo separado de
+`JWT_SECRET`, mínimo 32 caracteres, padrão local vedado em produção) e
+`CSRF_TRUSTED_ORIGINS` (origens explícitas separadas por vírgula, obrigatórias
+e HTTPS em produção, independentes de `CORS_ORIGINS`).
+
+Na etapa 3 foi definido `CSRF_EXPIRE_MINUTES`, positivo e configurável, com
+padrão **60 minutos** para facilitar os testes/demonstração. Expirar CSRF não
+revoga o JWT: o cliente pode obter nova pré-sessão/token pelo endpoint. O núcleo
+usa HMAC-SHA256 e nonce aleatório; o cookie de pré-sessão também é assinado.
+A emissão HTTP e a dependência de validação da pré-sessão estão implementadas.
+O vínculo ao `jti` e a rotação no login foram integrados na etapa 4. Login
+descarta a pré-sessão e renova o cookie CSRF; o frontend deve consultar novamente
+`/api/auth/csrf` para obter o token público da sessão autenticada. Com cookie JWT
+presente, escritas não voltam à pré-sessão em caso de JWT inválido. Apenas o
+bootstrap pode descartar uma credencial inválida para permitir novo login.
+Na etapa 5, `get_current_user` passou a ler o cookie, validar o JWT, exigir
+`sub` UUID canônico, recusar `jti` revogado e usuário inexistente/inativo, sempre
+com 401 e sem fallback Bearer. Na etapa 6, `POST /api/auth/logout` passou a exigir
+CSRF, revogar o `jti` até a expiração original sem duplicar registros e remover os
+cookies de acesso e CSRF, com 204. Repetir com cookies copiados retorna 204; repetir
+já sem cookies retorna 403 de CSRF. Na etapa 7, `require_csrf` virou dependência
+global do app: todas as escritas, inclusive cadastro, perfil, senha e avatar (e rotas
+futuras), exigem CSRF. O 401 passou a anunciar `WWW-Authenticate: Cookie realm="api"`
+em vez de `Bearer`. Os testes usam `csrf_client` e `logged_client` (login real),
+substituindo a previsão de `auth_headers`. A #21 deverá provisionar `CSRF_SECRET` e carregar as
+configurações CSRF de produção.
+
 ## Issues impactadas
 
 | Issue | Ajuste necessário |

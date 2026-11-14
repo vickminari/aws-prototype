@@ -56,12 +56,13 @@ def test_domain_error_with_custom_message_returns_it_in_detail():
 
 
 @pytest.mark.parametrize("exc_class", [InvalidCredentialsError, InvalidTokenError])
-def test_authentication_error_returns_www_authenticate_header(exc_class):
+def test_authentication_error_announces_cookie_scheme_not_bearer(exc_class):
+    """RFC 9110 exige um desafio no 401; anuncia o cookie, o único meio aceito."""
     client = TestClient(_app_raising(exc_class()))
 
     response = client.get("/boom")
 
-    assert response.headers["www-authenticate"] == "Bearer"
+    assert response.headers["www-authenticate"] == 'Cookie realm="api"'
 
 
 def test_unmapped_domain_error_returns_400():

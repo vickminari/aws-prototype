@@ -19,6 +19,8 @@ docker compose up --build
 O código em `backend/app` é montado no container com `--reload`: salvar um arquivo reinicia a API.
 Ao subir, o container roda `alembic upgrade head` (ver [Migrações](#migrações-alembic)).
 Variáveis opcionais vão em `backend/.env` (copie de `.env.example`); o `DATABASE_URL` do compose já aponta para o serviço `db`.
+Sem `.env`, a API sobe em `ENVIRONMENT=dev` e aceita escritas (CSRF) vindas do frontend local
+em `http://localhost:5173` e `http://127.0.0.1:5173`; defina `CSRF_TRUSTED_ORIGINS` para outras origens.
 
 ### Sem Docker (venv)
 
@@ -54,15 +56,26 @@ Os testes não precisam de PostgreSQL: usam SQLite em memória, recriado a cada 
 | `engine` | SQLite em memória (`StaticPool`, chaves estrangeiras ligadas) com as tabelas criadas |
 | `db_session` | `Session` do SQLAlchemy; use para criar dados e conferir o que foi gravado |
 | `app` | app FastAPI com `get_db` apontando para a `db_session` do teste |
-| `client` | `TestClient(app)` |
+| `client` | `TestClient(app)` sem CSRF: leituras e testes de rejeição de escrita |
+| `csrf_client` | cliente com pré-sessão CSRF; envia `Origin` e `X-CSRF-Token` em toda requisição. Use no cadastro e em escritas com `auth_user` |
+| `logged_user` / `logged_client` | login real (cookie HttpOnly) com CSRF renovado e vinculado ao `jti`; para testes de ponta a ponta |
 | `user_factory` | `user_factory(username="maria", password="Outra-123")` cria e salva um usuário; campos omitidos recebem valores válidos e únicos. Senha padrão: `DEFAULT_PASSWORD` |
-| `auth_user` | usuário criado e devolvido por `get_current_user` em todas as rotas (sem login) |
+| `auth_user` | usuário criado e devolvido por `get_current_user` em todas as rotas (sem login); não combine com `logged_client` |
+
+O app de teste confia somente na origem `http://testserver` (a do `TestClient`).
+Toda escrita exige CSRF: um POST/PUT/PATCH/DELETE com `client` recebe 403.
 
 ```python
 def test_read_me_returns_logged_user(client, auth_user):
     response = client.get("/api/users/me")
 
     assert response.json()["username"] == auth_user.username
+
+
+def test_patch_me_with_real_session(logged_client):
+    response = logged_client.patch("/api/users/me", json={"full_name": "Novo nome"})
+
+    assert response.status_code == 200
 ```
 
 ## Estrutura de camadas (MVC + Service)
@@ -70,7 +83,7 @@ def test_read_me_returns_logged_user(client, auth_user):
 ```
 app/
 ├── main.py              # create_app(): routers, CORS, handlers de erro, docs em /api/docs
-├── dependencies.py      # Depends: get_db, get_current_user e get_storage
+├── dependencies.py      # Depends: get_db, get_current_user (cookie, #9) e get_storage (local/S3, #11)
 ├── core/                # config.py (env), database.py (engine, SessionLocal, Base), security.py, exceptions.py
 ├── schemas/   (VIEW)    # Pydantic: o que entra e o que sai da API
 ├── controllers/ (CONTROLLER) # routers finos: recebem dependências e chamam UM método de service
@@ -89,7 +102,7 @@ Services lançam exceções de `app/core/exceptions.py`; o handler global em `ma
 | Exceção | HTTP |
 |---|---|
 | `EmailAlreadyExistsError`, `UsernameAlreadyExistsError` | 409 |
-| `InvalidCredentialsError`, `InvalidTokenError` | 401 (com `WWW-Authenticate: Bearer`) |
+| `InvalidCredentialsError`, `InvalidTokenError` | 401 (com `WWW-Authenticate: Cookie realm="api"`) |
 | `WrongPasswordError` | 400 |
 | `InvalidImageError` | 422 |
 | `NotFoundError` | 404 |
@@ -99,10 +112,13 @@ Services lançam exceções de `app/core/exceptions.py`; o handler global em `ma
 
 Nunca use `HTTPException` em services.
 
-### Usuário autenticado nos testes (antes do login existir)
+### Usuário autenticado nos testes
 
-`get_current_user` é um stub que sempre responde 401. Para testar rotas protegidas, use a
-fixture `auth_user` (ver [Fixtures](#fixtures-testsconftestpy)), que faz:
+`get_current_user` autentica pelo cookie HttpOnly do login (ver
+[Login, logout, cookies e CSRF](#login-logout-cookies-e-csrf-issue-9)). Para testar uma rota
+protegida sem passar pelo login, use a fixture `auth_user`
+(ver [Fixtures](#fixtures-testsconftestpy)), que faz o override abaixo; em escritas,
+combine-a com `csrf_client`:
 
 ```python
 app.dependency_overrides[get_current_user] = lambda: usuario_de_teste
@@ -232,14 +248,120 @@ de entropia e ser exclusivo desta aplicação. Não reutilize o segredo de desen
 O JWT é assinado, não criptografado: não inclua senhas ou outros segredos no payload.
 
 Essas funções independem do transporte: cookie e header são definidos na camada
-HTTP. A checagem de usuário ativo e de revogação por `jti` pertence à issue #9;
-decodificar um token não basta para autorizar uma requisição.
+HTTP. Decodificar um token não basta para autorizar uma requisição: `get_current_user`
+também consulta a revogação do `jti` e o usuário ativo (ver seção seguinte).
 
 O transporte escolhido para o navegador é **JWT em cookie HttpOnly**.
 O [registro da decisão](../docs/DECISAO_AUTENTICACAO.md) define o contrato futuro
 de login/logout, proteção CSRF e os ajustes nas issues de frontend e deploy.
 A integração HTTP será implementada na #9; os handlers descritos acima ainda
 refletem o esqueleto atual.
+
+### Login, logout, cookies e CSRF (issue #9)
+
+`controllers/auth_cookies.py` centraliza criação e remoção do cookie de acesso:
+`access_token` em dev/test e `__Host-access_token` em produção. Ambos usam
+`HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`; produção sempre usa `Secure`.
+A duração configurada é `JWT_EXPIRE_MINUTES * 60` segundos. Os helpers não
+validam o JWT. A criação do cookie está integrada ao login e a remoção, ao logout.
+
+| Variável | Desenvolvimento/testes | Produção |
+|---|---|---|
+| `CSRF_SECRET` | Padrão local se omitida | Segredo aleatório exclusivo, mínimo 32 caracteres; não aceita o padrão local |
+| `CSRF_TRUSTED_ORIGINS` | Lista explícita HTTP(S), por exemplo `http://localhost:5173` | Lista explícita HTTPS obrigatória, por exemplo `https://app.example.com` |
+| `CSRF_EXPIRE_MINUTES` | `60`, configurável e positivo | `60`, configurável e positivo |
+
+`CSRF_SECRET` deve ser diferente de `JWT_SECRET`; gere os dois independentemente
+e provisione o novo segredo via Parameter Store na #21. Comprimento mínimo não
+substitui geração aleatória. Nunca use os valores fictícios dos testes no deploy.
+
+Origens são separadas por vírgula e incluem esquema, host e porta opcional,
+sem credenciais, caminhos, query, fragmento ou curingas. A barra final é removida.
+O padrão vazio não autoriza origens. Essa lista é separada de `CORS_ORIGINS`:
+mesmo servindo frontend/API na mesma origem, configure a origem pública em CSRF.
+
+`GET /api/auth/csrf` inicia/reutiliza uma pré-sessão assinada e retorna
+`{"csrf_token":"..."}` com `Cache-Control: no-store`. Define cookies HttpOnly
+`csrf_session` e `csrf_token` (prefixados com `__Host-` e `Secure` em produção).
+Envie o token retornado em `X-CSRF-Token`; ele é público e distinto do JWT.
+
+`core/csrf.py` usa HMAC-SHA256, nonce aleatório, vínculo com a sessão e expiração.
+O prazo padrão de 60 minutos afeta CSRF/pré-sessão, não renova nem revoga JWTs.
+A pré-sessão tem expiração assinada própria: recarregar o endpoint não prolonga
+indefinidamente a mesma pré-sessão. Na segunda metade da validade, o endpoint cria
+outra pré-sessão, e nenhum token vence depois da pré-sessão a que está vinculado.
+
+Enquanto o token do cookie for válido para a sessão atual e tiver ao menos metade da
+validade pela frente, `GET /api/auth/csrf` devolve o mesmo token. Assim, várias abas
+(que compartilham cookies) e navegações vindas de outro site não invalidam o token
+que uma aba já guarda em memória. Perto do vencimento, o endpoint emite outro; se uma
+escrita receber 403 `CSRF_INVALID`, busque novo token e repita uma vez.
+
+`require_csrf` valida primeiro `Origin` ou, apenas quando ausente, a origem do
+`Referer`. Depois exige cookie/header iguais e assinatura válida vinculada à
+pré-sessão ou ao `jti` do JWT válido. Com cookie JWT presente não há fallback
+para pré-sessão se o JWT estiver inválido. Falhas retornam 403 com `CSRF_INVALID`.
+
+Fluxo de login para o frontend (#12):
+
+1. `GET /api/auth/csrf`: receba os cookies e guarde `csrf_token` em memória.
+2. `POST /api/auth/login`: envie `username` (ou email) e `password` em
+   `application/x-www-form-urlencoded`, mais `X-CSRF-Token` e os cookies.
+   Identificador com `@` é buscado só como email; sem `@`, só como username.
+   Cadastro e `PATCH /api/users/me` impedem username com `@` e email sem `@`,
+   então uma conta não consegue capturar o login de outra.
+3. Sucesso: 200 com `{"detail":"Login realizado"}`, `Cache-Control: no-store`,
+   cookie JWT HttpOnly e cookie CSRF renovado. A pré-sessão é removida; o JWT
+   nunca aparece no JSON. Se o navegador já tinha sessão (novo login ou troca de
+   conta), o `jti` anterior é revogado. Credenciais incorretas e usuário inativo retornam 401
+   com a mesma mensagem; erro de origem/CSRF retorna 403; formulário inválido, 422.
+4. Busque novamente `/api/auth/csrf` para ler o novo token CSRF vinculado ao `jti`.
+   O token antigo não autoriza escritas, mesmo restaurando os cookies da pré-sessão.
+
+O bootstrap com JWT expirado/adulterado remove o cookie de acesso inválido e
+permite obter pré-sessão para novo login. Isso não autentica usuário nem autoriza
+escritas.
+
+`create_app` registra `require_csrf` como dependência global: toda rota de escrita
+(`POST`, `PUT`, `PATCH`, `DELETE`), inclusive as que forem criadas depois, exige
+origem confiável e `X-CSRF-Token` antes da autenticação e da execução da rota.
+Isso cobre cadastro, login, logout, perfil, senha e upload/remoção de avatar.
+Leituras (`GET`, `HEAD`, `OPTIONS`) não são afetadas e não devem alterar dados.
+O FastAPI lê e valida o corpo antes das dependências: JSON malformado de outra
+origem recebe 422 em vez de 403, e um upload é lido antes da recusa. Nenhuma
+operação é executada sem CSRF válido; validar antes do corpo exigiria middleware.
+O OpenAPI documenta o 403 `CSRF_INVALID` em cada escrita, e
+`tests/integration/test_write_protection.py` verifica todas as escritas listadas
+no OpenAPI, falhando se uma nova rota escapar da proteção.
+
+Rotas protegidas usam `get_current_user`, que lê somente o cookie de acesso do
+ambiente atual, valida o JWT e chama `auth_service.get_session_user`. Esse service
+exige `sub` com o UUID canônico emitido no login, rejeita `jti` presente em
+`revoked_tokens` e usuário inexistente ou inativo. Qualquer falha, inclusive cookie
+ausente, retorna 401 com `INVALID_TOKEN`, nunca 500. Não há fallback para
+`Authorization: Bearer`, nem para o nome de cookie do outro ambiente. O OpenAPI
+descreve o esquema `CookieAuth` (`apiKey` em cookie); após o login no próprio
+Swagger, o navegador envia o cookie automaticamente. Respostas 401 trazem
+`WWW-Authenticate: Cookie realm="api"`: a RFC 9110 exige um desafio, e anunciar
+`Bearer` induziria clientes a usar um mecanismo que a API não aceita. As escritas
+pelo Swagger também exigem `X-CSRF-Token`; prefira o frontend ou os testes.
+
+`POST /api/auth/logout` exige origem confiável e `X-CSRF-Token` vinculado à sessão
+(o mesmo fluxo das demais escritas). Não usa `get_current_user`: revoga o `jti` do
+cookie via `auth_service.logout`, gravando em `revoked_tokens` a expiração original
+do JWT, e remove os cookies de acesso, `csrf_token` e `csrf_session` com os mesmos
+atributos da criação. Responde 204 sem corpo e com `Cache-Control: no-store`.
+
+- Logout é idempotente: repetir com uma cópia dos cookies (outra aba, por exemplo)
+  retorna 204 sem duplicar a revogação, inclusive em gravações concorrentes.
+- Repetir no mesmo navegador, já sem cookies, retorna 403 `CSRF_INVALID`; o
+  frontend (#14) deve tratar isso como sessão já encerrada, nunca como erro 500.
+- Somente com pré-sessão (sem JWT) retorna 204 sem nada a revogar. O mesmo vale
+  para JWT de usuário já removido do banco: o token não autentica mais e o
+  logout apenas limpa os cookies, sem violar a chave estrangeira.
+- Uma cópia do JWT revogado recebe 401 nas rotas protegidas; outras sessões do
+  mesmo usuário continuam válidas, e um novo login funciona normalmente.
+Não há fallback automático para cookie sem `Secure` em produção.
 
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com
