@@ -184,12 +184,33 @@ aws ec2 describe-security-groups --filters "Name=group-name,Values=proto1-sg-web
 +----------------------+-----------------+-------------------------+
 ```
 
-### Teste de conexão (pendente: depende do RDS e da EC2)
+### Teste de conexão (RDS acessível da EC2, inacessível da internet)
 
-A issue pede, depois que o RDS (#20) e a EC2 (#22) existirem, o teste que comprova o isolamento. Ele será colado aqui:
+Executado em 2026-11-14, depois da criação do RDS `proto1-db` (#20, report 04) e da EC2 `proto1-app` (#22, report 06). Usa o `/dev/tcp` do bash no lugar do `nc`, que não vem instalado no Amazon Linux 2023:
 
-1. **Da EC2** (Session Manager): `nc -zv <endpoint-do-rds> 5432` → deve **conectar** (`succeeded`).
-2. **Da internet** (CloudShell, que fica fora da VPC): o mesmo comando → deve **falhar** por timeout. O RDS não tem acesso público e o `proto1-sg-db` não aceita origem fora do `proto1-sg-web`.
+```bash
+DB_ENDPOINT=proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+getent hosts "$DB_ENDPOINT"
+timeout 5 bash -c "</dev/tcp/$DB_ENDPOINT/5432" && echo "5432 ABERTA" || echo "5432 INACESSÍVEL"
+```
+
+**Da internet** (CloudShell, fora da VPC):
+
+```text
+10.0.11.135     proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+5432 INACESSÍVEL
+```
+
+**Da EC2** `proto1-app` (Session Manager, no `proto1-sg-web`):
+
+```text
+10.0.11.135     proto1-db.cxaocukci0x3.us-east-2.rds.amazonaws.com
+5432 ABERTA
+```
+
+O endpoint resolve para um IP privado da subnet `proto1-private-a`, e só a EC2, que está no `proto1-sg-web`, conecta na 5432. De fora da VPC a conexão dá timeout: o RDS não tem acesso público e o `proto1-sg-db` não aceita outra origem.
+
+![Teste de conexão da EC2 e do CloudShell](img/report_04_teste_conexao.png)
 
 ## 8. Como conectar / integrar
 
