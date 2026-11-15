@@ -27,6 +27,7 @@ consumida por este fluxo.
   `SecureString`.
 - `openssl` e AWS CLI disponíveis no CloudShell.
 - Variáveis `OWNER`, `SUFIXO` e `CSRF_TRUSTED_ORIGINS` definidas.
+- Variável `PUBLIC_HOST` definida com o domínio público da aplicação.
 - EC2 `proto1-app` criada com a role `proto1-ec2-role` para validar o
   `load-env.sh`.
 
@@ -43,6 +44,8 @@ consumida por este fluxo.
 | `STORAGE_BACKEND` | `s3` | Avatares são armazenados no bucket privado |
 | `S3_BUCKET` | `proto1-avatars-<sufixo>` | Integração com o bucket do report 03 |
 | `AWS_REGION` | `us-east-2` | Região da infraestrutura |
+| `LOG_LEVEL` | `INFO` por padrão | Evita logs excessivamente verbosos em produção |
+| `PUBLIC_HOST` | Domínio público sem `https://` | Identifica o host público da aplicação |
 | `DATABASE_URL` | Criada pela #20 | Evita duplicar ou expor a credencial do RDS |
 
 ### Parâmetros criados
@@ -68,6 +71,8 @@ export AWS_REGION=us-east-2
 export OWNER=<nome>
 export SUFIXO=<sufixo-do-bucket>
 export CSRF_TRUSTED_ORIGINS=https://<dominio-de-producao>
+export PUBLIC_HOST=<dominio-de-producao>
+export LOG_LEVEL=INFO
 export AWS_PAGER=""
 ```
 
@@ -202,6 +207,8 @@ status HTTP 200.
 O `docker-compose.prod.yml` lê o `.env` da raiz do repositório usando
 `env_file`. A API recebe `DATABASE_URL`, `JWT_SECRET`, `CSRF_SECRET`,
 `CSRF_TRUSTED_ORIGINS`, `STORAGE_BACKEND`, `S3_BUCKET` e `AWS_REGION`.
+O `.env` também contém `LOG_LEVEL` e `PUBLIC_HOST`; o carregador inclui
+automaticamente qualquer parâmetro criado em `/proto1/prod/`.
 
 A EC2 não precisa de access keys armazenadas no disco: a AWS CLI usa as
 credenciais temporárias fornecidas pela role `proto1-ec2-role`.
@@ -237,7 +244,9 @@ aws ssm delete-parameters \
     /proto1/prod/CSRF_TRUSTED_ORIGINS \
     /proto1/prod/S3_BUCKET \
     /proto1/prod/STORAGE_BACKEND \
-    /proto1/prod/AWS_REGION
+    /proto1/prod/AWS_REGION \
+    /proto1/prod/LOG_LEVEL \
+    /proto1/prod/PUBLIC_HOST
 ```
 
 Não remover `/proto1/prod/DATABASE_URL` neste passo: esse parâmetro pertence
