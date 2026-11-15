@@ -49,7 +49,16 @@ Os testes ficam ao lado do arquivo testado (`Componente.test.tsx`) e rodam em js
 docker build -t proto1-web ./frontend
 ```
 
-O [`Dockerfile`](Dockerfile) é multi-stage: `node` gera o `dist/` e `nginx:alpine` serve os arquivos. O [`nginx.conf`](nginx.conf) devolve o `index.html` para qualquer rota da SPA, encaminha `/api/` para `http://api:8000` (serviço `api` do Docker Compose), limita o upload a 3 MB, comprime JS/CSS/JSON com gzip e envia os headers de segurança. Fora do Compose o nome `api` não existe, então o container sozinho não sobe; ele roda com o `docker-compose.prod.yml` (#23).
+O [`Dockerfile`](Dockerfile) é multi-stage: `node` gera o `dist/` e `nginx:alpine` serve os arquivos. As configurações do Nginx ficam em [`nginx/`](nginx/):
+
+| Arquivo                                                                             | Papel                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`app.conf`](nginx/app.conf)                                                        | Comum aos dois modos: devolve o `index.html` para qualquer rota da SPA, encaminha `/api/` para `http://api:8000` (serviço `api` do Docker Compose), limita o upload a 3 MB, comprime JS/CSS/JSON com gzip e envia os headers de segurança |
+| [`http.conf`](nginx/http.conf)                                                      | **Sem certificado**: a aplicação inteira por HTTP, mais o desafio do Let's Encrypt                                                                                                                                                        |
+| [`https.conf`](nginx/https.conf) + [`http-redirect.conf`](nginx/http-redirect.conf) | **Com certificado**: HTTPS na 443 (HTTP/2, HSTS) e o HTTP redirecionando para HTTPS, exceto o desafio do Let's Encrypt e o `/api/health`                                                                                                  |
+| [`40-https.sh`](nginx/40-https.sh)                                                  | Roda a cada início do container e ativa um modo ou o outro, conforme exista `/etc/letsencrypt/live/proto1/fullchain.pem`                                                                                                                  |
+
+O certificado é emitido pelo [`infra/ec2/deploy.sh`](../infra/ec2/deploy.sh) e renovado pelo serviço `certbot` do `docker-compose.prod.yml` (#23). Fora do Compose o nome `api` não existe, então o container sozinho não sobe.
 
 ## Estrutura de pastas
 
