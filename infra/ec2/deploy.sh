@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Deploy na EC2 (ARQ §9): atualiza o código da main, recria os containers e testa a API.
+# Deploy na EC2 (ARQ §9): atualiza o código da main, gera o .env a partir do Parameter
+# Store (load-env.sh, #21), recria os containers e testa a API.
 #   cd /opt/proto1 && sudo ./infra/ec2/deploy.sh
-# Pré-requisito: .env na raiz do repositório, gerado a partir do Parameter Store (#21).
+#   SKIP_LOAD_ENV=1 ./infra/ec2/deploy.sh      → usa o .env já existente (ex.: fora da EC2)
 # Com PUBLIC_HOST no .env (ex.: 52-15-241-143.sslip.io), o primeiro deploy também emite o
 # certificado HTTPS do Let's Encrypt; os seguintes só o reaproveitam (o certbot renova).
 #   CERTBOT_STAGING=1 ./infra/ec2/deploy.sh   → certificado de teste, sem gastar o limite
@@ -11,12 +12,6 @@ cd "$(dirname "$0")/../.."
 COMPOSE=(docker compose -f docker-compose.prod.yml)
 HEALTH_URL="http://localhost/api/health"
 CERT_NAME="proto1"
-
-if [[ ! -f .env ]]; then
-  echo "ERRO: .env não encontrado em $(pwd). Gere-o a partir do Parameter Store antes do deploy." >&2
-  exit 1
-fi
-PUBLIC_HOST="$(sed -n 's/^PUBLIC_HOST=//p' .env | tail -n 1)"
 
 # Sobe (ou recria) os containers e espera ficarem saudáveis; em falha mostra os logs
 compose_up() {
@@ -36,6 +31,17 @@ has_certificate() {
 
 echo "==> Atualizando o código"
 git pull --ff-only
+
+# A cada deploy: um parâmetro alterado no Parameter Store entra sem passo manual
+if [[ -z "${SKIP_LOAD_ENV:-}" ]]; then
+  echo "==> Gerando o .env a partir do Parameter Store"
+  bash ./infra/ec2/load-env.sh
+fi
+if [[ ! -f .env ]]; then
+  echo "ERRO: .env não encontrado em $(pwd). Rode ./infra/ec2/load-env.sh na EC2." >&2
+  exit 1
+fi
+PUBLIC_HOST="$(sed -n 's/^PUBLIC_HOST=//p' .env | tail -n 1)"
 
 echo "==> Construindo e subindo os containers"
 compose_up
