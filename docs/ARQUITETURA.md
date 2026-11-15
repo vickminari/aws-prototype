@@ -97,40 +97,61 @@ Nenhum plano B foi acionado: o RDS (report 04) e o S3 com a role da EC2 (reports
 
 ### 2.1 Diagrama da infraestrutura
 
+Recursos reais criados nos reports 01 a 07 (região `us-east-2`, projeto `proto-tes`). Endereço público: **https://52-15-241-143.sslip.io**.
+
 ```mermaid
 flowchart LR
-    U[Usuário / Navegador] -- HTTP :80 --> EIP[(Elastic IP)]
+    U["Usuário / Navegador"] -- "HTTPS :443<br/>HTTP :80 redireciona" --> DNS["52-15-241-143.sslip.io<br/>(DNS público gratuito)"]
+    DNS --> EIP[("Elastic IP proto1-eip<br/>52.15.241.143")]
+    LE["Let's Encrypt"] -. "desafio HTTP-01 :80" .-> EIP
+    DEV["Equipe<br/>console AWS / CloudShell"] -. "Session Manager<br/>(sem porta 22)" .-> EC2
 
-    subgraph AWS["AWS — região us-east-2"]
+    subgraph AWS["AWS — us-east-2 — projeto proto-tes"]
       subgraph VPC["VPC proto1-vpc 10.0.0.0/16"]
-        IGW[Internet Gateway]
+        IGW["Internet Gateway<br/>proto1-igw"]
 
-        subgraph PUB["Subnet pública 10.0.1.0/24 (us-east-2a)"]
-          subgraph EC2["EC2 t3.micro — sg-web"]
-            NGINX[Nginx<br/>React build + proxy /api]
-            API[FastAPI<br/>Uvicorn]
+        subgraph PUBA["Subnet pública A 10.0.1.0/24 — us-east-2a<br/>rota 0.0.0.0/0 → IGW (proto1-rt-public)"]
+          subgraph EC2["EC2 proto1-app t3.micro — proto1-sg-web (80, 443)"]
+            NGINX["web: Nginx<br/>SPA React + proxy /api"]
+            API["api: FastAPI<br/>Uvicorn :8000"]
+            CB["certbot<br/>renova o certificado"]
           end
         end
 
-        subgraph PRIV["Subnets privadas 10.0.11.0/24 + 10.0.12.0/24"]
-          RDS[(RDS PostgreSQL<br/>db.t4g.micro — sg-db)]
+        PUBB["Subnet pública B 10.0.2.0/24 — us-east-2b<br/>reservada (ALB / 2ª instância)"]
+
+        subgraph PRIV["Subnets privadas 10.0.11.0/24 (2a) + 10.0.12.0/24 (2b)<br/>sem rota para a internet (proto1-rt-private)"]
+          RDS[("RDS proto1-db<br/>PostgreSQL 16.15, db.t4g.micro<br/>proto1-sg-db: 5432 só do sg-web")]
         end
 
-        S3EP[VPC Endpoint<br/>Gateway S3]
+        S3EP["VPC Endpoint Gateway<br/>proto1-s3-endpoint"]
       end
 
-      S3[(S3 bucket<br/>avatares — privado)]
-      SSM[SSM Parameter Store<br/>segredos]
+      S3[("S3 proto1-avatars-grupob31641132<br/>privado, SSE-S3")]
+      SSM["SSM Parameter Store<br/>/proto1/prod/* (SecureString)"]
+      IAM["IAM role proto1-ec2-role<br/>S3 avatars/* + leitura /proto1/*"]
     end
 
     EIP --- IGW --> NGINX
-    NGINX -- /api/* --> API
-    API -- 5432 --> RDS
-    API -- boto3 via IAM role --> S3EP --> S3
-    API -. lê na inicialização .-> SSM
+    NGINX -- "/api/*" --> API
+    API -- "5432" --> RDS
+    API -- "boto3, URL pré-assinada" --> S3EP --> S3
+    CB -. "volume do certificado" .- NGINX
+    EC2 -. "deploy.sh → load-env.sh<br/>gera o .env" .-> SSM
+    IAM -. "credenciais temporárias<br/>(IMDSv2, hop limit 2)" .- EC2
 ```
 
+| Requisito de rede (especificação B) | Onde aparece no diagrama |
+|---|---|
+| VPC | `proto1-vpc` com 2 subnets públicas e 2 privadas em 2 AZs |
+| Tabela de rotas | `proto1-rt-public` (`0.0.0.0/0 → IGW`) e `proto1-rt-private` (só `local` + endpoint do S3) |
+| Grupos de segurança | `proto1-sg-web` (80/443 da internet) e `proto1-sg-db` (5432 só a partir do `proto1-sg-web`) |
+| EC2 | `proto1-app` com Docker Compose (`web`, `api`, `certbot`) |
+| IP público | Elastic IP `52.15.241.143`, publicado como `52-15-241-143.sslip.io` |
+
 ### 2.2 Fluxo de uma requisição autenticada
+
+Sessão em cookie `HttpOnly` com proteção CSRF (ADR-010). O exemplo é uma escrita (`PATCH`); uma leitura (`GET`) só dispensa o header CSRF.
 
 ```mermaid
 sequenceDiagram
@@ -141,16 +162,43 @@ sequenceDiagram
     participant M as Model (SQLAlchemy)
     participant DB as RDS PostgreSQL
 
-    B->>N: GET /api/users/me (Authorization: Bearer <jwt>)
+    Note over B: Token CSRF obtido antes em GET /api/auth/csrf, guardado só em memória
+    B->>N: PATCH /api/users/me (cookie __Host-access_token + header X-CSRF-Token)
     N->>C: proxy_pass http://api:8000
-    C->>C: dependency get_current_user (valida JWT, checa revogação)
-    C->>S: user_service.get_profile(user)
-    S->>M: consulta via Session
-    M->>DB: SELECT ...
-    DB-->>M: linha
+    C->>C: require_csrf (Origin confiável + token assinado e vinculado ao jti)
+    C->>C: get_current_user (lê o cookie, valida o JWT, checa revogação)
+    C->>S: user_service.update_profile(db, user, payload)
+    S->>M: verifica unicidade e altera o User
+    M->>DB: SELECT / UPDATE
+    DB-->>M: ok
     M-->>S: objeto User
     S-->>C: User (+ URL pré-assinada do avatar)
-    C-->>B: 200 UserRead (schema Pydantic = View)
+    C-->>B: 200 UserProfileRead (schema Pydantic = View)
+```
+
+### 2.3 Fluxo do deploy
+
+Executado na EC2 pelo Session Manager (`infra/ec2/deploy.sh`, ADR-015; detalhes no report 07).
+
+```mermaid
+sequenceDiagram
+    participant D as Membro (Session Manager)
+    participant E as EC2 /opt/proto1
+    participant G as GitHub (main)
+    participant P as Parameter Store
+    participant L as Let's Encrypt
+
+    D->>E: sudo -i, depois ./infra/ec2/deploy.sh
+    E->>G: git pull --ff-only
+    E->>P: load-env.sh (get-parameters-by-path /proto1/prod/)
+    P-->>E: valores decifrados → .env (permissão 600)
+    E->>E: docker compose up -d --build --wait (api, web, certbot)
+    opt Primeiro deploy com PUBLIC_HOST e sem certificado
+        E->>L: certbot certonly --webroot (desafio HTTP-01)
+        L-->>E: certificado de 52-15-241-143.sslip.io
+        E->>E: reinicia o web em modo HTTPS
+    end
+    E->>E: curl /api/health por HTTP e HTTPS
 ```
 
 ---
