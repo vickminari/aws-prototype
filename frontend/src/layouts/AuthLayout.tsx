@@ -15,7 +15,7 @@ export function AuthLayout({ title, subtitle, children }: AuthLayoutProps) {
       <div className="fixed top-4 right-4 z-10">
         <ThemeToggle />
       </div>
-      <Card className="w-full max-w-md">
+      <Card className="page-enter w-full max-w-md">
         <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
         {subtitle && <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>}
         <div className="mt-6">{children}</div>

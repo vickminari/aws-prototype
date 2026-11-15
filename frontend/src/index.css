@@ -54,3 +54,28 @@
     animation: none;
   }
 }
+
+/*
+ * Entrada suave das telas: fade com leve deslize ao trocar de página. Só CSS, então
+ * funciona em todos os navegadores e não usa o mesmo mecanismo da transição do tema.
+ */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.page-enter {
+  animation: page-enter 220ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter {
+    animation: none;
+  }
+}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { NavLink, Outlet, useNavigate } from 'react-router'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { ThemeToggle } from '../components/ThemeToggle.tsx'
 import { Avatar } from '../components/ui/Avatar.tsx'
@@ -61,6 +61,7 @@ function SidebarNav({ onNavigate, onLogout, isLoggingOut }: SidebarNavProps) {
 export function DashboardLayout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
@@ -136,7 +137,10 @@ export function DashboardLayout() {
         )}
 
         <main className="flex-1 p-4 md:p-8">
-          <Outlet />
+          {/* key: a animação de entrada roda de novo a cada troca de página */}
+          <div key={location.pathname} className="page-enter">
+            <Outlet />
+          </div>
         </main>
       </div>
     </div>
