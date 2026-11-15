@@ -268,7 +268,7 @@ sequenceDiagram
 │   │   ├── 04_rds.sh
 │   │   ├── 05_ssm_parameters.sh
 │   │   ├── 06_ec2.sh
-│   │   └── lib.sh                # funções auxiliares (log, buscar ID por tag, infra/.state/)
+│   │   └── lib.sh                # funções auxiliares (log, tags padrão, IDs em infra/.state/)
 │   ├── ec2/
 │   │   ├── user-data.sh          # bootstrap da instância
 │   │   ├── load-env.sh           # lê SSM Parameter Store → gera .env
@@ -622,96 +622,107 @@ O mínimo planejado eram 3 arquivos (por causa do prazo); foram entregues **10**
 
 - **Região:** `us-east-2` (Ohio), atribuída automaticamente pela AWS (ADR-008). **AZs:** `us-east-2a` e `us-east-2b`. Confirmar em AWS Settings → Projeto → Visão geral → Informações adicionais → Região; se aparecer outra, trocar em `infra/scripts/00_env.sh` e nesta seção.
 - **Tipo de conta:** criada pela **nova experiência da AWS** ("Sign up for AWS (new)"), no plano gratuito. Todos os serviços usados neste projeto (EC2, VPC, RDS, S3, Systems Manager, IAM, CloudShell, Budgets, CloudTrail) estão na lista de serviços suportados do plano gratuito.
+- **Projeto no AWS Settings:** `proto-tes`. O nome do projeto é independente da convenção abaixo: `proto1` continua sendo o prefixo dos recursos e o valor da tag `Project`.
 - **Prefixo de nomes:** `proto1-` (ex.: `proto1-vpc`, `proto1-sg-web`).
 - **Tags obrigatórias em todo recurso:** `Project=proto1` e `Owner=<membro responsável>`.
 - Ninguém usa o usuário **root** no dia a dia (seção 8.8).
 
 ### 8.2 Rede (VPC)
 
-| Recurso | Nome | Valor |
-|---|---|---|
-| VPC | `proto1-vpc` | `10.0.0.0/16`, DNS hostnames e DNS resolution habilitados |
-| Subnet pública A | `proto1-public-a` | `10.0.1.0/24` — `us-east-2a` — auto-assign public IP **desligado** (usamos Elastic IP) |
-| Subnet pública B | `proto1-public-b` | `10.0.2.0/24` — `us-east-2b` (reserva para evolução: ALB/2ª instância) |
-| Subnet privada A | `proto1-private-a` | `10.0.11.0/24` — `us-east-2a` |
-| Subnet privada B | `proto1-private-b` | `10.0.12.0/24` — `us-east-2b` |
-| Internet Gateway | `proto1-igw` | anexado à VPC |
-| VPC Endpoint | `proto1-s3-endpoint` | Gateway endpoint `com.amazonaws.us-east-2.s3`, associado às duas route tables |
+Criada por Gabriel Lopes na #17 ([report 01](aws/report_01_vpc_rede.md)).
+
+| Recurso | Nome | Valor | ID |
+|---|---|---|---|
+| VPC | `proto1-vpc` | `10.0.0.0/16`, DNS hostnames e DNS resolution habilitados | `vpc-0e3944afb658f063f` |
+| Subnet pública A | `proto1-public-a` | `10.0.1.0/24` — `us-east-2a` — auto-assign public IP **ligado** (o user data precisa de internet antes de o Elastic IP ser associado, ADR-011) | `subnet-020460f423e4aa900` |
+| Subnet pública B | `proto1-public-b` | `10.0.2.0/24` — `us-east-2b` — auto-assign ligado (reserva para evolução: ALB/2ª instância) | `subnet-030019050f42c15e0` |
+| Subnet privada A | `proto1-private-a` | `10.0.11.0/24` — `us-east-2a` | `subnet-023892d705296676b` |
+| Subnet privada B | `proto1-private-b` | `10.0.12.0/24` — `us-east-2b` | `subnet-020a8aef6f5f3e5bd` |
+| Internet Gateway | `proto1-igw` | anexado à VPC | `igw-032cab57d8414bfdf` |
+| VPC Endpoint | `proto1-s3-endpoint` | Gateway endpoint `com.amazonaws.us-east-2.s3`, associado às duas route tables | `vpce-017bafa392c655d53` |
 
 > O RDS exige um *DB subnet group* com subnets em **pelo menos 2 AZs**, por isso existem duas subnets privadas.
 > **Sem NAT Gateway** (custo fixo por hora + tráfego). A subnet privada não precisa sair para a internet: o RDS é gerenciado e o acesso ao S3 é pelo endpoint.
 
 ### 8.3 Tabelas de rotas
 
-| Tabela | Associada a | Rotas |
-|---|---|---|
-| `proto1-rt-public` | `proto1-public-a`, `proto1-public-b` | `10.0.0.0/16 → local`; `0.0.0.0/0 → proto1-igw`; prefix list do S3 → endpoint |
-| `proto1-rt-private` | `proto1-private-a`, `proto1-private-b` | `10.0.0.0/16 → local`; prefix list do S3 → endpoint |
+| Tabela | Associada a | Rotas | ID |
+|---|---|---|---|
+| `proto1-rt-public` | `proto1-public-a`, `proto1-public-b` | `10.0.0.0/16 → local`; `0.0.0.0/0 → proto1-igw`; prefix list do S3 → endpoint | `rtb-082bbb531f4610e34` |
+| `proto1-rt-private` | `proto1-private-a`, `proto1-private-b` | `10.0.0.0/16 → local`; prefix list do S3 → endpoint | `rtb-07c5cdf3e21c65d60` |
+| `proto1-rt-main` (principal) | nenhuma | só `10.0.0.0/16 → local` | `rtb-02f51ef46ad431509` |
 
 A tabela principal (main) da VPC fica sem associação explícita e sem rota para a internet (subnet nova sem associação nunca fica pública por acidente).
 
 ### 8.4 Security Groups
 
-**`proto1-sg-web`** (EC2)
+Criados por Thalys Yago na #18 ([report 02](aws/report_02_security_groups.md)).
+
+**`proto1-sg-web`** (EC2) — `sg-09b1318a081965dfc`
 
 | Direção | Protocolo/porta | Origem/destino | Motivo |
 |---|---|---|---|
-| Entrada | TCP 80 | `0.0.0.0/0` | HTTP da aplicação |
-| Entrada | TCP 443 | `0.0.0.0/0` | HTTPS (só se a evolução HTTPS for feita) |
+| Entrada | TCP 80 | `0.0.0.0/0` | HTTP: redireciona para HTTPS e atende o desafio do Let's Encrypt |
+| Entrada | TCP 443 | `0.0.0.0/0` | HTTPS; obrigatório, porque o cookie de sessão é `Secure` (ADR-012) |
 | Saída | Todos | `0.0.0.0/0` | atualizações, Docker Hub, GitHub, SSM, S3 |
 
 Sem porta 22: o acesso administrativo é feito pelo **SSM Session Manager**. (Se a equipe precisar de SSH em algum momento, liberar 22 apenas para o IP `/32` de quem for usar, temporariamente, e registrar no report.)
 
-**`proto1-sg-db`** (RDS)
+**`proto1-sg-db`** (RDS) — `sg-035eab28e4158d2d8`
 
 | Direção | Protocolo/porta | Origem | Motivo |
 |---|---|---|---|
 | Entrada | TCP 5432 | **`proto1-sg-web`** (referência ao SG, não a IP) | Só a EC2 fala com o banco |
 | Saída | — | padrão | — |
 
+O projeto usa só security groups (stateful); a NACL padrão da VPC (permite tudo) não foi alterada.
+
 ### 8.5 EC2
 
 | Item | Valor |
 |---|---|
-| Nome | `proto1-app` |
-| AMI | Amazon Linux 2023 (x86_64) |
-| Tipo | `t3.micro` (elegível ao free tier) |
+| Nome | `proto1-app` (`i-0aef26cfc5b4bbb7f`), criada por Jailson Zarur na #22 ([report 06](aws/report_06_ec2_elastic_ip.md)) |
+| AMI | Amazon Linux 2023 (x86_64), a mais recente no lançamento |
+| Tipo | `t3.micro` (elegível ao free tier), CPU credits **`standard`** (sem cobrança extra por uso de CPU, ADR-013) |
 | Subnet | `proto1-public-a` |
 | SG | `proto1-sg-web` |
-| Disco | 20 GB gp3, criptografado |
+| Key pair | **nenhum** (acesso só pelo Session Manager, ADR-004) |
+| Disco | 20 GB gp3, criptografado, apagado com a instância |
 | IAM instance profile | `proto1-ec2-role` (seção 8.8) |
-| IMDS | v2 obrigatório (`HttpTokens=required`) |
-| User data | `infra/ec2/user-data.sh`: atualiza pacotes, instala Docker + plugin Compose + git, cria **swap de 2 GB** (1 GB de RAM não basta para o build do React), habilita o Docker, clona o repositório em `/opt/proto1` |
-| IP público | **Elastic IP** `proto1-eip` associado à instância (fixo mesmo após stop/start) |
+| IMDS | v2 obrigatório (`HttpTokens=required`), **hop limit 2**: a API roda em container e precisa alcançar o metadata para receber as credenciais da role (ADR-013) |
+| User data | `infra/ec2/user-data.sh`: instala Docker, git e `nmap-ncat`, os plugins Compose e Buildx, cria **swap de 2 GB** (1 GB de RAM não basta para o build do React), habilita o Docker no boot, clona o repositório em `/opt/proto1` |
+| IP público | **Elastic IP** `proto1-eip` = **`52.15.241.143`** (`eipalloc-0bb1bc42c86ae9f31`), fixo mesmo após stop/start |
 
 ### 8.6 RDS PostgreSQL
 
 | Item | Valor |
 |---|---|
-| Identificador | `proto1-db` |
-| Engine | PostgreSQL 16 (ou a versão estável mais recente oferecida) |
-| Classe | `db.t4g.micro` (ou `db.t3.micro`) |
+| Identificador | `proto1-db`, criado por José Victor na #20 ([report 04](aws/report_04_rds.md)) |
+| Engine | PostgreSQL 16.15 (a 16.x mais recente no momento da criação) |
+| Classe | `db.t4g.micro` |
+| AZ | `us-east-2a` (a mesma da EC2) |
 | Armazenamento | 20 GB gp3, criptografado, **autoscaling desligado** |
 | Multi-AZ | **Não** |
 | DB subnet group | `proto1-db-subnets` (private-a + private-b) |
 | Acesso público | **Não** |
 | SG | `proto1-sg-db` |
 | Banco inicial / usuário | `proto1` / `proto1_admin` |
-| Senha | gerada aleatoriamente pelo script e salva direto no Parameter Store (nunca em arquivo commitado) |
+| Senha | gerada pelo script (`openssl rand -hex 24`) e salva em `/proto1/rds/MASTER_PASSWORD` **antes** de criar o banco; fica fora de `/proto1/prod/` porque a API só precisa da `DATABASE_URL` (ADR-014) |
 | Backup automático | 1 dia de retenção |
 | Proteção contra exclusão | desligada (facilita o teardown) |
 
-Para administrar o banco: abrir sessão na EC2 via Session Manager e rodar `docker run --rm -it postgres:16 psql "<DATABASE_URL>"`, ou usar port forwarding do Session Manager para a máquina local.
+Para administrar o banco: abrir sessão na EC2 via Session Manager e rodar `docker run --rm -it postgres:16 psql "<DATABASE_URL>"`, ou usar port forwarding do Session Manager para a máquina local. O endpoint está no report 04; a URL com senha só existe no Parameter Store.
 
 ### 8.7 S3
 
 | Item | Valor |
 |---|---|
-| Bucket | `proto1-avatars-<sufixo-único>` (nomes de bucket são globais) |
+| Bucket | `proto1-avatars-grupob31641132` (nomes de bucket são globais), criado por Pedro Emanuel na #19 ([report 03](aws/report_03_s3_iam_role.md)) |
 | Block Public Access | **todos ligados** |
 | Object Ownership | Bucket owner enforced (ACLs desabilitadas) |
 | Criptografia | SSE-S3 (padrão) |
 | Versionamento | desligado |
+| Prefixo usado | `avatars/` (a policy da role só libera esse prefixo) |
 | Acesso | somente pela role da EC2; leitura no navegador via URL pré-assinada |
 | CORS | não necessário (upload passa pela API) |
 
@@ -724,8 +735,8 @@ A conta usa a **nova experiência da AWS**, em que as pessoas **não** são IAM 
 | Item | Como é |
 |---|---|
 | Proprietário | Victor (dono da conta). Único que vê faturamento, créditos e limites de gasto, e único que convida ou remove membros |
-| Projeto | `proto1`. Um projeto da nova experiência é uma conta AWS gerenciada pela AWS; todos os recursos ficam nele |
-| Convite | Settings → **Equipe** → *Convidar um novo membro* → email + projeto `proto1`. O membro tem **14 dias** para aceitar (pedir para olhar o spam) |
+| Projeto | `proto-tes`. Um projeto da nova experiência é uma conta AWS gerenciada pela AWS; todos os recursos ficam nele |
+| Convite | Settings → **Equipe** → *Convidar um novo membro* → email + projeto `proto-tes`. O membro tem **14 dias** para aceitar (pedir para olhar o spam) |
 | Login dos membros | Cada membro cria o próprio **AWS Builder ID** (pode entrar com email, Google, GitHub ou Apple) e ativa MFA nele |
 | Permissões dos membros | **Administrador do projeto**, definido pela AWS e sem como restringir: criam, editam e apagam qualquer recurso; **não** veem faturamento nem convidam pessoas |
 | IAM users e access keys | **Nenhum.** A AWS CLI roda no **CloudShell** (ícone `>_` no console), que já vem autenticado. Para usar a CLI no próprio computador, o comando `aws login` gera credenciais temporárias de 12 h |
@@ -755,11 +766,13 @@ Por que isso continua sendo boa prática: cada pessoa tem identidade própria co
       "Sid": "LerSegredosDaAplicacao",
       "Effect": "Allow",
       "Action": ["ssm:GetParametersByPath", "ssm:GetParameter"],
-      "Resource": "arn:aws:ssm:us-east-2:ACCOUNT_ID:parameter/proto1/*"
+      "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/proto1/*"
     }
   ]
 }
 ```
+
+`SUFIXO`, `REGION` e `ACCOUNT_ID` são substituídos pelo `infra/scripts/03_s3_iam_role.sh` (no protótipo: `grupob31641132` e `us-east-2`).
 
 A nova experiência tem o *IAM role manager*, que cria roles automaticamente para alguns serviços. Para a EC2, usamos a nossa role, escolhida explicitamente no lançamento: se o console sugerir uma role automática, selecionar `proto1-ec2-role`.
 
@@ -767,15 +780,22 @@ Não é preciso permissão de KMS: SecureStrings criptografadas com a chave padr
 
 ### 8.9 Segredos — SSM Parameter Store
 
-| Parâmetro | Tipo |
-|---|---|
-| `/proto1/prod/DATABASE_URL` | SecureString |
-| `/proto1/prod/JWT_SECRET` | SecureString |
-| `/proto1/prod/S3_BUCKET` | String |
-| `/proto1/prod/STORAGE_BACKEND` | String (`s3`) |
-| `/proto1/prod/AWS_REGION` | String |
+Criados por Pedro Emanuel na #21 ([report 05](aws/report_05_ssm_parameters.md)), exceto os do RDS (#20). **Todos são `SecureString`** (chave gerenciada `aws/ssm`), inclusive os que não são segredo: um tipo só simplifica o script e o `load-env.sh`.
 
-`infra/ec2/load-env.sh` lê `/proto1/prod/` com `aws ssm get-parameters-by-path --with-decryption` e escreve `/opt/proto1/.env` (permissão `600`).
+| Parâmetro | Origem do valor |
+|---|---|
+| `/proto1/prod/DATABASE_URL` | `04_rds.sh` (#20) |
+| `/proto1/prod/JWT_SECRET` | `openssl rand -hex 32` |
+| `/proto1/prod/CSRF_SECRET` | `openssl rand -hex 32` (separado do JWT) |
+| `/proto1/prod/CSRF_TRUSTED_ORIGINS` | `https://52-15-241-143.sslip.io` |
+| `/proto1/prod/S3_BUCKET` | `proto1-avatars-grupob31641132` |
+| `/proto1/prod/STORAGE_BACKEND` | `s3` |
+| `/proto1/prod/AWS_REGION` | `us-east-2` |
+| `/proto1/prod/LOG_LEVEL` | `INFO` |
+| `/proto1/prod/PUBLIC_HOST` | `52-15-241-143.sslip.io` (usado só pelo `deploy.sh`) |
+| `/proto1/rds/MASTER_PASSWORD` | `04_rds.sh`; fora de `/proto1/prod/` de propósito (ADR-014) |
+
+`infra/ec2/load-env.sh` lê `/proto1/prod/` com `aws ssm get-parameters-by-path --with-decryption` e escreve `/opt/proto1/.env` (permissão `600`). O `deploy.sh` roda o `load-env.sh` a cada deploy, então um parâmetro alterado entra sem passo manual (ADR-015).
 
 ### 8.10 Auditoria e evidência de contribuição na AWS
 
@@ -797,30 +817,38 @@ Não é preciso permissão de KMS: SecureStrings criptografadas com a chave padr
 
 ### 9.1 Containers
 
-**`docker-compose.yml` (dev local):** `db` (postgres:16), `api` (build `backend/`, hot reload, porta 8000), `web` opcional (em dev o normal é `npm run dev` com o proxy do Vite).
+**`docker-compose.yml` (dev local):** `db` (postgres:16) e `api` (build `backend/`, hot reload, porta 8000). O frontend roda fora do Compose, com `npm run dev` e o proxy do Vite.
 
 **`docker-compose.prod.yml` (EC2):**
 
 | Serviço | Imagem | Portas | Observações |
 |---|---|---|---|
-| `api` | build `backend/` | interna 8000 | `env_file: .env`; `restart: unless-stopped`; healthcheck em `/api/health` |
-| `web` | build `frontend/` (multi-stage: `node` build → `nginx:alpine`) | **80:80** | serve `dist/`; `location /api/` → `proxy_pass http://api:8000`; `try_files $uri /index.html` para a SPA; `client_max_body_size 3m` |
+| `api` | build `backend/` (Python 3.12, usuário sem privilégios) | interna 8000 | `env_file: .env`; `ENVIRONMENT=prod` fixo; `restart: unless-stopped`; healthcheck em `/api/health` (inclui o banco) |
+| `web` | build `frontend/` (multi-stage: `node` build → `nginx:alpine`) | **80:80** e **443:443** | serve `dist/`; `location /api/` → `proxy_pass http://api:8000`; `try_files $uri /index.html` para a SPA; `client_max_body_size 3m`; gzip e headers de segurança; reinicia junto quando a `api` é recriada |
+| `certbot` | `certbot/certbot:v5.10.0` | — | tenta renovar o certificado a cada 12 h; o Nginx recarrega a cada 6 h |
 
-O backend roda `alembic upgrade head` no `entrypoint.sh` antes do Uvicorn.
+Todos os containers usam logs `json-file` limitados a 10 MB × 3 (sem rotação, o disco de 20 GB encheria). O backend roda `alembic upgrade head` no `entrypoint.sh` antes do Uvicorn.
 
-### 9.2 Passo a passo do deploy (resumo; detalhes no `report_07_deploy.md`)
+**Nginx em dois modos** (`frontend/nginx/`, ADR-012): o Nginx não sobe com configuração HTTPS sem certificado, e o Let's Encrypt só emite o certificado com o Nginx respondendo na porta 80. Por isso o `40-https.sh` escolhe o modo a cada início do container: sem certificado, `http.conf` (aplicação por HTTP + desafio HTTP-01); com certificado, `https.conf` (TLS 1.2/1.3, HTTP/2, HSTS de 1 dia) + `http-redirect.conf` (HTTP → HTTPS, exceto o desafio e o `/api/health`). O conteúdo comum fica em `app.conf`.
 
-1. Infra criada pelos scripts `01` a `06` (ou console, documentado).
+### 9.2 Passo a passo do deploy (resumo; detalhes no [report 07](aws/report_07_deploy.md))
+
+1. Infra criada pelos scripts `01` a `06` (ou console, documentado nos reports 01 a 06).
 2. Conectar na EC2: console → EC2 → selecionar `proto1-app` → **Conectar** → aba **Session Manager** → Conectar (abre um terminal no navegador).
-3. `cd /opt/proto1 && sudo ./infra/ec2/load-env.sh` (gera `.env`).
-4. `sudo ./deploy.sh` → `git pull` + `docker compose -f docker-compose.prod.yml up -d --build` + checagem `curl -f http://localhost/api/health`.
-5. Smoke test externo: abrir `http://<elastic-ip>/`, registrar, logar, editar perfil, subir imagem, logout.
+3. `sudo -i`, `cd /opt/proto1 && ./infra/ec2/deploy.sh`, que faz em ordem:
+   1. `git pull --ff-only` da `main`;
+   2. roda o `load-env.sh` (gera o `.env` do Parameter Store);
+   3. `docker compose -f docker-compose.prod.yml up -d --build --wait` (só termina com os healthchecks verdes);
+   4. no primeiro deploy com `PUBLIC_HOST`, emite o certificado (`certbot certonly --webroot`) e reinicia o `web` em modo HTTPS;
+   5. `docker image prune -f`;
+   6. testa `/api/health` por HTTP e por HTTPS.
+4. Smoke test externo em `https://52-15-241-143.sslip.io`: cadastro, login, perfil, foto, senha, logout (`docs/checklist_validacao.md`, #24).
 
-Atualizações seguintes: merge na `main` → repetir passos 2 e 4.
+Atualizações seguintes: merge na `main` → repetir os passos 2 e 3. Variáveis úteis: `SKIP_LOAD_ENV=1` (usa o `.env` atual) e `CERTBOT_STAGING=1` (certificado de teste, sem gastar o limite do Let's Encrypt).
 
-### 9.3 Walking skeleton (dia 3)
+### 9.3 Walking skeleton (planejado para o dia 3)
 
-O primeiro deploy acontece com o esqueleto (API com `/api/health` + frontend com páginas placeholder), assim que EC2, RDS e Parameter Store existirem. Isso valida cedo rede, SG, role, segredos, Docker e Nginx — os pontos que mais costumam travar. A partir daí, o responsável pelo deploy atualiza a produção ao fim de cada dia com o que estiver na `main`.
+O plano era subir o esqueleto (API com `/api/health` + frontend com páginas placeholder) assim que EC2, RDS e Parameter Store existissem, para validar cedo rede, SG, role, segredos, Docker e Nginx. Na prática, a infraestrutura ficou pronta mais tarde que o previsto (VPC, SGs, RDS e EC2 em 2026-11-14) e o primeiro deploy já foi da aplicação completa, com HTTPS, em 2026-11-15 (report 07). Até lá, a integração foi validada localmente com o `docker-compose.yml` e o proxy do Vite.
 
 ---
 
@@ -832,7 +860,7 @@ A documentação é responsabilidade de **todos**, em **toda** issue, e é escri
 |---|---|---|
 | **O que foi feito e por quê** (por entrega) | O que mudou, por que, como testar, evidências | Descrição do PR (template abaixo) + mensagens de commit |
 | **Como funciona** (permanente) | Como o sistema/infra funciona e como usar | READMEs, docstrings, Swagger, reports AWS, ADRs |
-| **Como a equipe trabalhou** (processo) | Passos executados, dia a dia, quem fez o quê | Diário de bordo (seção 10.6) + issues/PRs |
+| **Como a equipe trabalhou** (processo) | Passos executados, dia a dia, quem fez o quê | Commits, PRs, issues e reports (seção 10.6) |
 
 ### 10.1 Definição de Pronto (DoD) — vale para todas as issues
 
@@ -846,31 +874,28 @@ Uma issue só é fechada quando:
 - [ ] Nenhum segredo em código, docs ou prints.
 - [ ] Outro membro revisou e aprovou.
 
-**Template de PR** (`.github/pull_request_template.md`):
+**Template de PR** (`.github/pull_request_template.md`, versão simplificada adotada no setup, #1):
 
 ```markdown
-Closes #<n>
+Closes #
 
 ## O que foi feito
 <!-- 2 a 5 itens objetivos -->
-
-## Por quê / decisões
-<!-- escolhas feitas e alternativas descartadas; se for decisão de arquitetura, link para o ADR -->
 
 ## Como testar
 <!-- comandos ou passos para o revisor reproduzir -->
 
 ## Evidências
-<!-- saída dos testes, prints da tela ou do console AWS -->
+<!-- saída dos testes, prints da tela ou do console AWS (sem segredos!) -->
 
-## Documentação atualizada
-- [ ] Docstrings / comentários onde a lógica não é óbvia
-- [ ] README do módulo (se mudou como rodar, estrutura ou variáveis)
-- [ ] `.env.example` e ARQUITETURA §5.8 (se criou variável)
-- [ ] Report AWS (se mexeu na AWS)
-- [ ] ADR (se tomou decisão de arquitetura)
-- [ ] Não se aplica
+## Checklist
+- [ ] Critérios de aceite da issue cumpridos
+- [ ] Testes passando / verificação colada no report
+- [ ] README ou report atualizado (se aplicável)
+- [ ] Nenhum segredo em código, docs ou prints
 ```
+
+Decisões e alternativas descartadas vão no corpo do PR quando houver; decisões de arquitetura viram ADR (seção 15).
 
 ### 10.2 Onde documentar cada tipo de mudança
 
@@ -935,8 +960,8 @@ Recursos/reports que precisam existir antes.
 ## 3. Decisões e configurações
 Tabela com cada configuração escolhida e o porquê.
 
-## 4. Passo a passo (console)
-Passos numerados, com prints (`![descrição](img/report_XX_passo1.png)`).
+## 4. Passo a passo
+Passos numerados (console ou script), com prints (`![descrição](img/report_XX_passo1.png)`).
 
 ## 5. Equivalente via AWS CLI
 Como rodar o script e o que ele faz.
@@ -957,7 +982,7 @@ Estimativa e o que está coberto pelo free tier/créditos.
 ## 10. Problemas encontrados e soluções
 
 ## 11. Como desfazer
-Ordem de exclusão (ou referência ao `99_teardown.sh`).
+Ordem de exclusão (a ordem completa fica no report 08).
 
 ## 12. Referências
 Links da documentação oficial da AWS.
@@ -972,50 +997,54 @@ Links da documentação oficial da AWS.
 - **Lineares e comentados** (simplificação pelo prazo): o script é o registro fiel dos comandos usados, na ordem, e recria o recurso numa conta limpa. Não precisa verificar se o recurso já existe.
 - Fluxo recomendado: executar o script (em vez de clicar no console) e depois tirar os prints do console mostrando o resultado. Assim o script e o report nunca divergem.
 - IDs criados são gravados em `infra/.state/outputs.env` (no `.gitignore`) para uso pelos scripts seguintes.
-- `99_teardown.sh` é desejável; o mínimo é o report 08 descrever a ordem de exclusão manual.
+- `lib.sh` concentra o log de cada passo (`log`/`fail`), a checagem de variáveis (`require_env`), as tags padrão (`tag_spec`: `Name`, `Project`, `Owner`) e a gravação dos IDs em `infra/.state/outputs.env` (`save_output`). Alguns scripts (ex.: `05_ssm_parameters.sh`) conferem se o parâmetro já existe antes de gravar.
+- Não há `99_teardown.sh`: a ordem de exclusão manual fica no report 08 (#26).
 
-### 10.6 Diário de bordo
+### 10.6 Registro do trabalho da equipe
 
-Uma issue fixada (*pinned*) chamada **"Diário de bordo da equipe"** recebe, todo dia, **um comentário de cada membro** no formato:
+O diário de bordo diário planejado (uma issue fixada com um comentário por membro por dia) **não foi adotado** (ADR-017). O registro do que cada um fez, e em que ordem, está no próprio GitHub:
 
-```markdown
-**D3 — <nome>**
-- Fiz: <o que concluiu, com links de PR/issue>
-- Próximo: <o que faz amanhã>
-- Bloqueios / aprendizados: <opcional>
-```
+- **Commits** pequenos, em Conventional Commits, com o número da issue e corpo explicando o porquê;
+- **PRs** com o template preenchido (o que foi feito, como testar, evidências) e revisão de outro membro;
+- **Issues** atribuídas a cada responsável, com tarefas e critérios de aceite;
+- **Reports** em `docs/aws/`, com responsável e data no cabeçalho.
 
-Por que uma issue e não um arquivo: comentários não geram conflito de merge, ficam com autor e data automáticos e o professor vê tudo em um só lugar. Esse diário é a base para "descrever os passos executados" na apresentação e pode ser preenchido logo após a daily.
+O roteiro da apresentação e a tabela de contribuições de cada membro ficam na #27.
 
 ---
 
 ## 11. Fluxo de trabalho Git e rastreabilidade
 
-- **Modelo:** GitHub Flow. `main` protegida: só entra via PR, com **1 aprovação** de outro integrante e CI verde.
-- **Branches:** `<tipo>/<n-issue>-<descricao-curta>`, ex.: `feat/8-registro-usuario`, `docs/14-report-vpc`.
-- **Commits:** Conventional Commits em português: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `infra`. Escopo opcional: `feat(auth): ...`.
+- **Modelo:** GitHub Flow. `main` protegida: só entra via PR, com **1 aprovação** de outro integrante (regra aplicada também aos administradores). O CI roda em todo PR; não mergear com CI vermelho é um combinado da equipe (os jobs não estão marcados como *required checks* na proteção da branch).
+- **Branches:** `<tipo>/<n-issue>-<descricao-curta>`, ex.: `feat/8-registro`, `infra/17-vpc`, `docs/25-readme`.
+- **Commits:** Conventional Commits em português: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `infra`, `deploy`. Escopo opcional: `feat(auth): ...`. A mensagem cita a issue (`(#n)` no título ou `Refs #n` no corpo).
 - **PRs:** título igual ao da issue; descrição com `Closes #<n>`, o que foi feito, como testar, prints (se UI/AWS). Usar o `pull_request_template.md`.
 - **Estratégia de merge:** **"Create a merge commit"** (desabilitar *Squash* e *Rebase* nas configurações do repo). Squash juntaria todos os commits em um só e apagaria a sequência test → feat → refactor de cada autor.
 - **Identidade:** cada integrante configura `git config user.name` e `user.email` com o **mesmo email da conta GitHub** — senão os commits não contam no perfil nem em *Insights → Contributors*.
 - **Pareamento:** quando duas pessoas trabalharem juntas, adicionar `Co-authored-by: Nome <email>` no final da mensagem do commit.
-- **GitHub Projects:** quadro Kanban (Backlog → Em andamento → Em revisão → Concluído) ligado às issues.
+- **GitHub Projects:** quadro `aws-prototype-tes-issues` ligado às issues (Backlog → In progress → In review → Done).
 - **Evidência para a apresentação:** `git shortlog -sne`, *Insights → Contributors* e a lista de issues fechadas por responsável.
 
 ---
 
 ## 12. Segurança (checklist)
 
-- [ ] Senhas com Argon2id; nunca logadas nem retornadas.
-- [ ] JWT com segredo forte vindo do Parameter Store; expiração de 60 min; revogação no logout.
-- [ ] Mensagens de erro de login genéricas.
-- [ ] Validação de entrada em todos os schemas (tamanho máximo em todo campo texto).
-- [ ] Upload: tipo verificado por magic bytes, limite de 2 MB (API e Nginx).
-- [ ] `.env`, `infra/.state/`, chaves e `*.pem` no `.gitignore`; *secret scanning* do GitHub ligado.
-- [ ] RDS sem acesso público, SG aceitando só o SG da EC2.
-- [ ] S3 com Block Public Access; acesso por role; URLs pré-assinadas com validade curta.
-- [ ] EC2 sem porta 22 aberta; IMDSv2 obrigatório; disco criptografado.
-- [ ] Proprietário e todos os membros com MFA no Builder ID; nenhum IAM user nem access key de pessoa (CLI via CloudShell ou `aws login`); recursos avançados não ativados.
-- [ ] Headers de segurança no Nginx (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).
+Situação na entrega (conferida na revisão final, #25):
+
+- [x] Senhas com Argon2id; nunca logadas nem retornadas.
+- [x] JWT com segredo forte vindo do Parameter Store; expiração de 60 min; revogação no logout.
+- [x] JWT em cookie `HttpOnly` + `Secure` (`__Host-`), fora do alcance de JavaScript; CSRF assinado em todas as escritas (ADR-010).
+- [x] HTTPS com certificado confiável; HTTP redireciona para HTTPS; HSTS (ADR-012).
+- [x] Mensagens de erro de login genéricas.
+- [x] Validação de entrada em todos os schemas (tamanho máximo em todo campo texto).
+- [x] Upload: tipo verificado por magic bytes, limite de 2 MB na API (3 MB no corpo, no Nginx).
+- [x] `.env`, `infra/.state/` e `*.pem` no `.gitignore`; *secret scanning* e *push protection* do GitHub ligados.
+- [x] RDS sem acesso público, SG aceitando só o SG da EC2.
+- [x] S3 com Block Public Access; acesso por role; URLs pré-assinadas de 1 h.
+- [x] EC2 sem porta 22 aberta e sem key pair; IMDSv2 obrigatório; disco criptografado.
+- [x] Nenhum IAM user nem access key de pessoa (CLI via CloudShell); recursos avançados não ativados (report 00).
+- [x] Headers de segurança no Nginx (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, HSTS).
+- [x] Reports e prints revisados: nenhuma senha, chave, `JWT_SECRET`/`CSRF_SECRET`, `DATABASE_URL` com senha ou valor decifrado do Parameter Store (#25).
 
 ---
 
@@ -1033,13 +1062,16 @@ A conta está no **plano gratuito da nova experiência**: créditos iniciais (US
 | **NAT Gateway** | ~US$ 32/mês + tráfego | **Não criar** |
 
 - Criar um **AWS Budget** de US$ 10 com alertas por email em 50%, 80% e 100% (report 00). Mesmo sem cobrança, ele avisa se algum recurso esquecido estiver consumindo os créditos.
-- Rodar `99_teardown.sh` ao final da disciplina.
+- Seguir a ordem de exclusão do report 08 (#26) ao final da disciplina. Até lá, parar a EC2 e o RDS quando não estiverem em uso (o Elastic IP continua cobrando).
+- HTTPS (Let's Encrypt) e DNS (sslip.io) não têm custo.
 
 ---
 
 ## 14. Fora do escopo / evoluções futuras
 
-HTTPS com domínio + Let's Encrypt (ou ALB + ACM); refresh token e cookie `httpOnly`; recuperação de senha por email (SES); papéis/admin; ECR + pipeline de deploy automático (GitHub Actions + SSM Run Command); Auto Scaling Group + ALB usando a subnet pública B; CloudFront na frente do S3; logs no CloudWatch Logs; Terraform.
+Antecipados e entregues neste protótipo: HTTPS com Let's Encrypt (ADR-012) e JWT em cookie `HttpOnly` (ADR-010).
+
+Continuam fora do escopo: domínio próprio (no lugar do sslip.io) ou ALB + ACM; refresh token; recuperação de senha por email (SES); papéis/admin; ECR + pipeline de deploy automático (GitHub Actions + SSM Run Command); Auto Scaling Group + ALB usando a subnet pública B; CloudFront na frente do S3; logs no CloudWatch Logs; Terraform; `99_teardown.sh`; testes do `S3StorageService` com `moto`; jobs do CI como *required checks* da `main`; remover o `UploadFile` dos services (ADR-016).
 
 ---
 
