@@ -58,7 +58,7 @@ export function ChangePasswordPage() {
 
   return (
     <div className="mx-auto flex max-w-md flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Alterar senha</h1>
+      <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Alterar senha</h1>
 
       <Card>
         <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">

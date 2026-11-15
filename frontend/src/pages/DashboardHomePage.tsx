@@ -14,28 +14,37 @@ export function DashboardHomePage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Olá, {firstName}!</h1>
+      <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">
+        Olá, {firstName}!
+      </h1>
 
       <Card className="flex flex-col items-center gap-6 sm:flex-row sm:items-start">
         <Avatar name={user.full_name} src={user.profile_image_url} size="lg" />
         <div className="min-w-0 text-center sm:text-left">
-          <h2 className="text-xl font-semibold break-words text-slate-900">{user.full_name}</h2>
-          <p className="text-sm text-slate-500">@{user.username}</p>
+          <h2 className="text-xl font-semibold break-words text-slate-900 dark:text-slate-100">
+            {user.full_name}
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400">@{user.username}</p>
 
           {user.description ? (
-            <p className="mt-3 break-words whitespace-pre-line text-slate-700">
+            <p className="mt-3 break-words whitespace-pre-line text-slate-700 dark:text-slate-300">
               {user.description}
             </p>
           ) : (
-            <p className="mt-3 text-sm text-slate-500">
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
               Você ainda não escreveu uma descrição.{' '}
-              <Link to="/dashboard/profile" className="font-medium text-blue-600 hover:underline">
+              <Link
+                to="/dashboard/profile"
+                className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+              >
                 Editar perfil
               </Link>
             </p>
           )}
 
-          <p className="mt-4 text-sm text-slate-500">Membro desde {formatDate(user.created_at)}</p>
+          <p className="mt-4 text-sm text-slate-500 dark:text-slate-400">
+            Membro desde {formatDate(user.created_at)}
+          </p>
         </div>
       </Card>
     </div>

@@ -78,12 +78,12 @@ export function AvatarUploader({ user }: { user: UserProfileRead }) {
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold text-slate-900">Foto de perfil</h2>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Foto de perfil</h2>
       <div className="mt-4 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
         <Avatar name={user.full_name} src={previewUrl ?? user.profile_image_url} size="lg" />
 
         <div className="flex flex-col items-center gap-3 sm:items-start">
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {file ? `Pré-visualização: ${file.name}` : 'JPEG, PNG ou WebP, até 2 MB.'}
           </p>
 
@@ -132,7 +132,7 @@ export function AvatarUploader({ user }: { user: UserProfileRead }) {
           </div>
 
           {error && (
-            <p id={errorId} role="alert" className="text-sm text-red-600">
+            <p id={errorId} role="alert" className="text-sm text-red-600 dark:text-red-400">
               {error}
             </p>
           )}

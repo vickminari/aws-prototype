@@ -11,8 +11,10 @@ interface PlaceholderPageProps {
 export function PlaceholderPage({ title, issue, children }: PlaceholderPageProps) {
   return (
     <Card className="mx-auto w-full max-w-md text-center">
-      <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-      <p className="mt-2 text-sm text-slate-500">Em construção (issue #{issue}).</p>
+      <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">{title}</h1>
+      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+        Em construção (issue #{issue}).
+      </p>
       {children}
     </Card>
   )

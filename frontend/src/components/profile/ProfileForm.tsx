@@ -83,7 +83,7 @@ export function ProfileForm({ user }: { user: UserProfileRead }) {
 
   return (
     <Card>
-      <h2 className="text-lg font-semibold text-slate-900">Dados do perfil</h2>
+      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">Dados do perfil</h2>
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="mt-4 flex flex-col gap-4">
         <Input
           label="Nome completo"
@@ -112,7 +112,7 @@ export function ProfileForm({ user }: { user: UserProfileRead }) {
           {(controlProps) => (
             <textarea
               rows={4}
-              className={`rounded-md border px-3 py-2 text-sm focus:outline-2 focus:outline-blue-600 ${errors.description ? 'border-red-500' : 'border-slate-300'}`}
+              className={`rounded-md border px-3 py-2 text-sm focus:outline-2 focus:outline-blue-600 ${errors.description ? 'border-red-500' : 'border-slate-300 dark:border-slate-700'}`}
               {...controlProps}
               {...register('description')}
             />
