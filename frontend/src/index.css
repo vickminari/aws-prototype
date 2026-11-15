@@ -1,1 +1,56 @@
 @import 'tailwindcss';
+
+/* Modo escuro ligado pela classe .dark no <html> (botão de tema, #37), e não só pelo sistema. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  /* Cores padrão do texto e do fundo, inclusive do que digitamos nos campos. */
+  body {
+    @apply bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100;
+  }
+
+  /* Controles nativos (barra de rolagem, seletor de arquivo) também no tema escuro. */
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+/*
+ * Transição do tema (#37), disparada por src/hooks/useTheme.ts.
+ * View Transitions: a tela nova se revela em círculo a partir do switch (--theme-x/y/r).
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-new(root) {
+  animation: theme-reveal 700ms cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes theme-reveal {
+  from {
+    clip-path: circle(0 at var(--theme-x, 50%) var(--theme-y, 50%));
+  }
+  to {
+    clip-path: circle(var(--theme-r, 150%) at var(--theme-x, 50%) var(--theme-y, 50%));
+  }
+}
+
+/* Sem View Transitions: fade das cores por 0,5 s (mesma duração de FADE_MS no useTheme.ts). */
+.theme-fade,
+.theme-fade *,
+.theme-fade *::before,
+.theme-fade *::after {
+  transition-property:
+    background-color, border-color, color, fill, stroke, outline-color !important;
+  transition-duration: 500ms !important;
+  transition-timing-function: ease-in-out !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
