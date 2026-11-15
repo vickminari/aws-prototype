@@ -57,13 +57,12 @@ A sequência de commits é avaliada:
 - Região **`us-east-2`**. Prefixo `proto1-` e tags `Project=proto1` e `Owner=<seu nome>` em todo recurso.
 - **Mexa só nos recursos da sua frente.**
 
-## 7. Diário de bordo
+## 7. Registro do trabalho
 
-Todo dia, comente na issue **Diário de bordo da equipe** (fixada):
+Não há diário de bordo separado (ADR-017 em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md)). O histórico de quem fez o quê fica no próprio GitHub, então capriche nele:
 
-```markdown
-**D3 — Seu Nome**
-- Fiz: <o que concluiu, com links de PR/issue>
-- Próximo: <o que faz amanhã>
-- Bloqueios / aprendizados: <opcional>
-```
+- **Commits** pequenos, citando a issue (`(#n)` no título ou `Refs #n` no corpo) e explicando o porquê no corpo quando não for óbvio.
+- **PR** com o template preenchido: o que foi feito, como testar e evidências.
+- **Report** da AWS com o seu nome e a data no cabeçalho.
+
+O roteiro da apresentação e a tabela de contribuições de cada membro ficam na issue #27.
