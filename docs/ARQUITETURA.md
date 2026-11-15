@@ -4,6 +4,7 @@
 > **Equipe:** 5 integrantes (nomes e responsabilidades no `README.md`; tarefas nas [issues](https://github.com/vickminari/aws-prototype/issues)). Responsável pelo setup do repositório, pela conta AWS e pelo IAM: Victor.
 > **Prazo:** 1 semana (7 dias). Ver seção 1.3 para a priorização e o que foi simplificado por causa disso.
 > **Status deste documento:** fonte da verdade do projeto. Toda decisão nova ou alterada deve ser registrada aqui (seção 15) **no mesmo PR** que a implementa.
+> **Revisão final (issue #25, 2026-11-15):** o documento foi conferido com o código, os scripts e os reports e descreve o que foi **entregue**. Onde o implementado difere do plano original, o texto foi atualizado e o motivo está num ADR da seção 15 (ADR-010 em diante).
 
 ---
 
@@ -18,7 +19,7 @@
 7. Frontend
 8. Infraestrutura AWS
 9. Deploy
-10. Documentação do projeto (padrão comum, código, AWS, diário)
+10. Documentação do projeto (padrão comum, código, AWS)
 11. Fluxo de trabalho Git e rastreabilidade
 12. Segurança
 13. Custos e cuidados com a conta
@@ -29,14 +30,14 @@
 
 ## 1. Escopo e requisitos
 
-### 1.1 Requisitos da especificação → como serão atendidos
+### 1.1 Requisitos da especificação → como foram atendidos
 
 | # | Requisito (especificação) | Solução |
 |---|---|---|
-| A1 | Login/Logout, autenticação e autorização | JWT (Bearer) + hash Argon2 nas senhas; logout com revogação do token no servidor (tabela `revoked_tokens`) |
+| A1 | Login/Logout, autenticação e autorização | JWT em cookie `HttpOnly` + proteção CSRF (ADR-010) + hash Argon2 nas senhas; logout com revogação do token no servidor (tabela `revoked_tokens`) |
 | A1 | Registro de novos usuários | `POST /api/auth/register` + página de cadastro |
 | A2 | Dashboard para usuário autenticado | SPA React com rota protegida: menu lateral (Início, Meu perfil, Alterar senha, Sair) |
-| A2 | Edição de perfil e troca de senha | `PATCH /api/users/me`, `PUT /api/users/me/password`, `POST /api/users/me/avatar` |
+| A2 | Edição de perfil e troca de senha | `PATCH /api/users/me`, `PUT /api/users/me/password`, `POST` e `DELETE /api/users/me/avatar` |
 | A2 | Propriedades: nome completo, username, password, email, imagem, descrição, data de criação | Modelo `User` (seção 5.4); imagem no **S3** |
 | B | VPC | VPC própria `10.0.0.0/16` com subnets públicas e privadas em 2 AZs |
 | B | EC2 para hospedar a aplicação | 1 instância `t3.micro` (Amazon Linux 2023) rodando Docker Compose |
@@ -50,6 +51,7 @@
 
 Obrigatórios: **VPC** (subnets, IGW, route tables, security groups), **EC2**, **Elastic IP**.
 Adicionais (decisão da equipe): **RDS PostgreSQL** (banco), **S3** (imagens de perfil), **AWS Settings → Equipe** (acesso dos membros), **IAM** (role da EC2), **SSM Parameter Store** (segredos), **Systems Manager Session Manager** (acesso à EC2 sem SSH aberto), **VPC Gateway Endpoint para S3**, **AWS Budgets** e **CloudTrail** (controle de custo e auditoria).
+Fora da AWS (gratuitos): **Let's Encrypt** (certificado HTTPS) e **sslip.io** (nome DNS que aponta para o Elastic IP), ver ADR-012.
 
 ### 1.3 Restrição de prazo (1 semana) e priorização
 
@@ -69,6 +71,16 @@ Adicionais (decisão da equipe): **RDS PostgreSQL** (banco), **S3** (imagens de 
 | **Planejado** (decisão da equipe, mantido) | RDS, S3, IAM role, Parameter Store, Session Manager, CI, TDD no backend, revogação de token no logout |
 | **Simplificado pelo prazo** | Cobertura mínima de 70% (era 80%); testes de frontend limitados a 3 arquivos (seção 7.7); scripts AWS CLI lineares, sem idempotência (seção 10.5); diagrama em Mermaid (ícones oficiais da AWS só se sobrar tempo) |
 | **Só se sobrar tempo (dia 6)** | Teardown automatizado (o report descreve a ordem manual), menu responsivo elaborado, prints do CloudTrail nos reports, testes de frontend adicionais |
+
+**Resultado na entrega:**
+
+| Situação | Itens |
+|---|---|
+| Entregue | Todo o escopo obrigatório e todo o planejado |
+| Entregue além do plano | HTTPS com certificado confiável (ADR-012); JWT em cookie `HttpOnly` com proteção CSRF no lugar do `localStorage` (ADR-010); menu responsivo (botão no celular); modo escuro (#37) e transições entre telas (#53); 10 arquivos de teste no frontend em vez de 3 |
+| Pendente | Report 08 de teardown (#26); prints do CloudTrail; `99_teardown.sh` (substituído pela ordem manual do report 08) |
+
+Nenhum plano B foi acionado: o RDS (report 04) e o S3 com a role da EC2 (reports 03 e 07) funcionaram, e o swap de 2 GB bastou para o build do frontend na EC2 (report 06).
 
 **Plano B (troca só de configuração, sem mudar código):**
 
@@ -151,14 +163,15 @@ sequenceDiagram
 | Backend | FastAPI (Python 3.12) | Django, Flask | Pedido da equipe; tipagem, OpenAPI automático, ótimo suporte a testes |
 | Arquitetura do código | MVC + Service (View–Controller–Service–Model) | Clean Architecture completa | Pedido da equipe; separa regra de negócio sem burocracia excessiva |
 | Banco | **RDS PostgreSQL** + SQLAlchemy 2 + Alembic | DynamoDB, SQLite | Dados relacionais com unicidade (email/username); SQLAlchemy permite SQLite nos testes; RDS exige subnets privadas, SG e route tables → exercita os itens da especificação (ver ADR-001) |
-| Autenticação | JWT HS256 via PyJWT, expiração 60 min, sem refresh token | Sessão com cookie, OAuth externo | Pedido da equipe; stateless; simples de demonstrar |
+| Autenticação | JWT HS256 via PyJWT, expiração 60 min, sem refresh token, entregue em cookie `HttpOnly` com proteção CSRF (ADR-010) | Bearer em `localStorage` (plano original), sessão no servidor, OAuth externo | Pedido da equipe; stateless; o cookie `HttpOnly` impede que um XSS leia o token |
 | Logout | Revogação no servidor (lista de `jti` revogados) | Apenas apagar token no cliente | Mostra logout "de verdade" na apresentação; custo baixo |
 | Hash de senha | Argon2id via `pwdlib` | bcrypt via passlib | `passlib` está sem manutenção; `pwdlib` é o recomendado pela documentação atual do FastAPI |
 | Imagem de perfil | S3 privado + URL pré-assinada | Bucket público, salvar no disco da EC2 | Segurança (nada público) e desacoplamento da instância |
 | Credenciais AWS na EC2 | IAM Role (instance profile) | Access keys no `.env` | Nunca existem chaves em arquivo; prática recomendada pela AWS |
 | Segredos da aplicação | SSM Parameter Store (SecureString) | Secrets Manager, `.env` commitado | Parameter Store padrão é gratuito; Secrets Manager é pago |
 | Frontend | React + TypeScript + Vite | CRA, Next.js | CRA está descontinuado; Next.js é desnecessário para uma SPA simples |
-| Deploy | Docker Compose em 1 EC2: Nginx (React build + proxy) + API | React no S3, systemd | Mesma origem (sem CORS), simples de explicar e reproduzir |
+| Deploy | Docker Compose em 1 EC2: Nginx (React build + proxy) + API + certbot, atualizado pelo `infra/ec2/deploy.sh` (ADR-015) | React no S3, systemd, CD automático | Mesma origem (sem CORS), simples de explicar e reproduzir |
+| HTTPS | Let's Encrypt (HTTP-01) para o nome `52-15-241-143.sslip.io` (ADR-012) | ALB + ACM, domínio próprio, só HTTP | O cookie de sessão é `Secure`; gratuito e sem domínio comprado |
 | Infra como código | Reports `.md` + scripts AWS CLI | Terraform, só console | Equilíbrio entre aprendizado do console e reprodutibilidade |
 | Região | `us-east-2` (Ohio) | — | **Imposta pela AWS**: na nova experiência a região é atribuída pelo país do cadastro (Brasil → Ohio) e não pode ser trocada (ADR-008) |
 | Acesso à EC2 | SSM Session Manager pelo botão "Conectar" do console (porta 22 fechada) | SSH com chave | Sem porta aberta e sem chave compartilhada; cada acesso fica registrado no CloudTrail |
@@ -177,7 +190,8 @@ sequenceDiagram
 ├── .gitattributes                # finais de linha LF (scripts .sh funcionam vindos do Windows)
 ├── docs/
 │   ├── ARQUITETURA.md            # este documento
-│   ├── checklist_validacao.md    # testes manuais em produção
+│   ├── DECISAO_AUTENTICACAO.md   # contrato do JWT em cookie HttpOnly + CSRF (ADR-010)
+│   ├── checklist_validacao.md    # testes manuais em produção (#24)
 │   ├── aws/
 │   │   ├── TEMPLATE_report.md
 │   │   ├── report_00_conta_equipe_custos.md
@@ -188,35 +202,43 @@ sequenceDiagram
 │   │   ├── report_05_ssm_parameters.md
 │   │   ├── report_06_ec2_elastic_ip.md
 │   │   ├── report_07_deploy.md
-│   │   ├── report_08_teardown.md
-│   │   └── img/                  # prints do console (nomeados report_XX_descricao.png)
+│   │   ├── report_08_teardown.md # issue #26
+│   │   └── img/                  # prints (report_XX_descricao.png; validação em img/report_24/)
 │   └── apresentacao/             # slides, roteiro da demo, tabela de contribuições
 ├── backend/
 │   ├── app/
 │   │   ├── main.py               # cria o app, registra routers e handlers de erro
 │   │   ├── core/
-│   │   │   ├── config.py         # Settings (pydantic-settings)
-│   │   │   ├── database.py       # engine, SessionLocal, Base
+│   │   │   ├── config.py         # Settings (pydantic-settings) e validações de produção
+│   │   │   ├── database.py       # engine, SessionLocal, Base, tipo UTCDateTime
 │   │   │   ├── security.py       # hash de senha e JWT (funções puras)
+│   │   │   ├── csrf.py           # tokens CSRF assinados (HMAC), sem camada HTTP
+│   │   │   ├── origins.py        # normalização de origens (CSRF e CORS)
 │   │   │   └── exceptions.py     # exceções de domínio
 │   │   ├── models/               # MODEL: entidades SQLAlchemy
 │   │   │   ├── user.py
 │   │   │   └── revoked_token.py
 │   │   ├── schemas/              # VIEW: contratos de entrada/saída (Pydantic)
 │   │   │   ├── auth.py
-│   │   │   └── user.py
+│   │   │   ├── user.py
+│   │   │   ├── health.py
+│   │   │   └── error.py          # formato padrão {"detail", "code"}
 │   │   ├── services/             # SERVICE: regras de negócio
 │   │   │   ├── auth_service.py
 │   │   │   ├── user_service.py
+│   │   │   ├── health_service.py
 │   │   │   └── storage/
-│   │   │       ├── base.py       # interface StorageService
-│   │   │       ├── local.py      # salva em disco (dev)
+│   │   │       ├── base.py       # interface StorageService + validação da imagem
+│   │   │       ├── local.py      # salva em disco (dev/testes)
 │   │   │       └── s3.py         # boto3 (produção)
 │   │   ├── controllers/          # CONTROLLER: routers FastAPI (finos)
 │   │   │   ├── auth_controller.py
 │   │   │   ├── user_controller.py
-│   │   │   └── health_controller.py
-│   │   └── dependencies.py       # get_db, get_current_user, get_storage
+│   │   │   ├── health_controller.py
+│   │   │   ├── auth_cookies.py   # nomes e atributos dos cookies de sessão
+│   │   │   ├── auth_session.py   # início e fim da sessão HTTP
+│   │   │   └── csrf_http.py      # pré-sessão CSRF e validação de origem
+│   │   └── dependencies.py       # get_db, get_current_user, get_storage, require_csrf
 │   ├── alembic/                  # migrações
 │   ├── alembic.ini
 │   ├── tests/
@@ -226,12 +248,14 @@ sequenceDiagram
 │   ├── Dockerfile
 │   ├── entrypoint.sh             # roda `alembic upgrade head` e sobe o uvicorn
 │   ├── pyproject.toml
+│   ├── uv.lock
 │   ├── README.md                 # como rodar/testar o backend (seção 10.3)
 │   └── .env.example
 ├── frontend/
 │   ├── src/                      # ver seção 7
 │   ├── Dockerfile                # build multi-stage → Nginx
-│   ├── nginx.conf
+│   ├── nginx/                    # app.conf, http.conf, https.conf, http-redirect.conf, 40-https.sh (seção 9.1)
+│   ├── vite.config.ts            # proxy /api → localhost:8000 em dev
 │   ├── package.json
 │   ├── README.md                 # como rodar/testar o frontend (seção 10.3)
 │   └── .env.example
@@ -244,17 +268,16 @@ sequenceDiagram
 │   │   ├── 04_rds.sh
 │   │   ├── 05_ssm_parameters.sh
 │   │   ├── 06_ec2.sh
-│   │   ├── 99_teardown.sh
-│   │   └── lib.sh                # funções auxiliares (log, buscar ID por tag)
+│   │   └── lib.sh                # funções auxiliares (log, buscar ID por tag, infra/.state/)
 │   ├── ec2/
 │   │   ├── user-data.sh          # bootstrap da instância
-│   │   └── load-env.sh           # lê SSM Parameter Store → gera .env
+│   │   ├── load-env.sh           # lê SSM Parameter Store → gera .env
+│   │   └── deploy.sh             # executado na EC2: git pull + .env + build + up + certificado
 │   └── policies/
 │       ├── ec2-trust-policy.json
 │       └── ec2-app-policy.json   # acesso ao bucket + leitura dos parâmetros
-├── docker-compose.yml            # desenvolvimento local (inclui postgres)
-├── docker-compose.prod.yml       # produção na EC2 (sem postgres, usa RDS)
-├── deploy.sh                     # executado na EC2: git pull + build + up
+├── docker-compose.yml            # desenvolvimento local (postgres + api)
+├── docker-compose.prod.yml       # produção na EC2 (api + web + certbot; sem postgres, usa RDS)
 ├── .github/
 │   ├── workflows/ci.yml
 │   ├── ISSUE_TEMPLATE/
@@ -283,9 +306,9 @@ sequenceDiagram
 | JWT | `PyJWT` |
 | AWS | `boto3` |
 | Upload | `python-multipart` |
-| Testes | `pytest`, `pytest-cov`, `httpx` (via `TestClient`), `moto[s3]` |
+| Testes | `pytest`, `pytest-cov`, `httpx2` (cliente do `TestClient` no Starlette 1.x), `moto[s3]` |
 | Qualidade | `ruff` (lint + format) |
-| Gerenciador | `uv` (com `pyproject.toml`); `pip install -e .[dev]` também deve funcionar |
+| Gerenciador | `uv` (com `pyproject.toml` e `uv.lock`; o CI usa `uv sync --locked`); `pip install -e .[dev]` também funciona |
 
 ### 5.2 Camadas e responsabilidades
 
@@ -295,7 +318,7 @@ A API não renderiza HTML; por isso a **View** do backend é a camada de **schem
 |---|---|---|---|
 | **View** | `schemas/` | Definir formato e validação de entrada/saída (tamanhos, regex, `EmailStr`), serializar respostas | Acessar banco, conter regra de negócio |
 | **Controller** | `controllers/` | Declarar rota, receber dependências (`db`, `current_user`, `storage`), chamar **um** método de service, devolver schema e status HTTP | Fazer query, fazer hash, chamar boto3, ter `if` de regra de negócio. Meta: cada handler com ≤ 10 linhas |
-| **Service** | `services/` | Regras de negócio (unicidade, troca de senha, revogação, upload), orquestrar models e storage, lançar exceções de domínio | Importar `fastapi`, conhecer `Request`/`HTTPException`/status HTTP |
+| **Service** | `services/` | Regras de negócio (unicidade, troca de senha, revogação, upload), orquestrar models e storage, lançar exceções de domínio | Importar `fastapi` (exceção aceita: o tipo `UploadFile` no upload do avatar, ADR-016), conhecer `Request`/`HTTPException`/status HTTP |
 | **Model** | `models/` | Entidades SQLAlchemy, colunas, constraints, relacionamentos | Regra de negócio, chamadas externas |
 | Core | `core/` | Config, conexão com banco, funções puras de segurança, exceções | Depender de controllers/services |
 
@@ -310,11 +333,14 @@ A API não renderiza HTML; por isso a **View** do backend é a camada de **schem
 | `EmailAlreadyExistsError`, `UsernameAlreadyExistsError` | 409 |
 | `InvalidCredentialsError` | 401 |
 | `InvalidTokenError` | 401 |
+| `InvalidCsrfTokenError` (`CSRF_INVALID`) | 403 |
 | `WrongPasswordError` (senha atual incorreta) | 400 |
+| `InvalidPasswordError` (nova senha inválida, ex.: igual à atual) | 422 |
 | `InvalidImageError` (tipo/tamanho) | 422 |
 | `NotFoundError` | 404 |
+| `DatabaseUnavailableError` (health com banco fora, ADR-009) | 503 |
 
-Formato padrão de erro: `{"detail": "mensagem legível", "code": "EMAIL_ALREADY_EXISTS"}`.
+Formato padrão de erro: `{"detail": "mensagem legível", "code": "EMAIL_ALREADY_EXISTS"}`. Todo 401 traz `WWW-Authenticate: Cookie realm="api"` (ADR-010).
 
 ### 5.3 Exemplo do padrão (referência para implementação)
 
@@ -344,7 +370,7 @@ def change_password(db: Session, user: User, current: str, new: str) -> None:
 |---|---|---|
 | `id` | UUID (`sqlalchemy.Uuid`) | PK, gerado na aplicação (`uuid4`) |
 | `full_name` | `String(120)` | obrigatório |
-| `username` | `String(30)` | obrigatório, **único**, indexado, salvo em minúsculas, regex `^[a-z0-9_.]{3,30}$` |
+| `username` | `String(30)` | obrigatório, **único**, indexado, salvo em minúsculas (a entrada aceita `^[a-zA-Z0-9_.]{3,30}$` e o service converte) |
 | `email` | `String(254)` | obrigatório, **único**, indexado, salvo em minúsculas |
 | `hashed_password` | `String(255)` | obrigatório; **nunca** retornado pela API |
 | `profile_image_key` | `String(512)` | opcional; chave do objeto no S3 (não a URL) |
@@ -368,42 +394,50 @@ Usar apenas tipos genéricos do SQLAlchemy (sem recursos exclusivos do PostgreSQ
 
 Prefixo global: `/api`. Documentação automática em `/api/docs` (Swagger) e `/api/openapi.json`.
 
+Toda escrita (`POST`, `PUT`, `PATCH`, `DELETE`), inclusive cadastro e login, exige o header `X-CSRF-Token` e uma origem confiável; sem isso a resposta é **403** `CSRF_INVALID` (ADR-010). "Auth = sim" significa o cookie de sessão `HttpOnly`.
+
 | Método | Rota | Auth | Entrada | Saída | Códigos |
 |---|---|---|---|---|---|
 | GET | `/api/health` | não | — | `{"status":"ok","db":"ok"}` | 200, 503 |
-| POST | `/api/auth/register` | não | `UserCreate` (JSON) | `UserRead` | 201, 409, 422 |
-| POST | `/api/auth/login` | não | form `username` + `password` (OAuth2PasswordRequestForm; aceita username **ou** email) | `Token` | 200, 401 |
-| POST | `/api/auth/logout` | sim | — | — | 204, 401 |
-| GET | `/api/users/me` | sim | — | `UserRead` | 200, 401 |
-| PATCH | `/api/users/me` | sim | `UserUpdate` (parcial) | `UserRead` | 200, 409, 422 |
-| PUT | `/api/users/me/password` | sim | `PasswordChange` | — | 204, 400, 422 |
-| POST | `/api/users/me/avatar` | sim | multipart `file` | `UserRead` | 200, 422 |
-| DELETE | `/api/users/me/avatar` | sim | — | `UserRead` | 200 |
+| GET | `/api/auth/csrf` | não | — | `CsrfRead` (`{"csrf_token": "..."}`) + cookie de pré-sessão | 200 |
+| POST | `/api/auth/register` | não | `UserCreate` (JSON) | `UserRead` | 201, 403, 409, 422 |
+| POST | `/api/auth/login` | não | form `username` + `password` (OAuth2PasswordRequestForm; aceita username **ou** email) | `{"detail": "Login realizado"}` + `Set-Cookie` (o JWT **não** vai no JSON) | 200, 401, 403, 422 |
+| POST | `/api/auth/logout` | sim | — | — (remove os cookies) | 204, 403 |
+| GET | `/api/users/me` | sim | — | `UserProfileRead` | 200, 401 |
+| PATCH | `/api/users/me` | sim | `UserUpdate` (parcial) | `UserProfileRead` | 200, 401, 403, 409, 422 |
+| PUT | `/api/users/me/password` | sim | `PasswordChange` | — | 204, 400, 401, 403, 422 |
+| POST | `/api/users/me/avatar` | sim | multipart `file` | `UserProfileRead` | 200, 401, 403, 422 |
+| DELETE | `/api/users/me/avatar` | sim | — | `UserProfileRead` | 200, 401, 403 |
 
 **Schemas (View):**
 
 - `UserCreate`: `full_name`, `username`, `email`, `password` (mín. 8 caracteres, ao menos 1 letra e 1 número), `description?`
 - `UserUpdate`: todos opcionais: `full_name`, `username`, `email`, `description` (senha e imagem têm rotas próprias)
 - `UserRead`: `id`, `full_name`, `username`, `email`, `description`, `profile_image_url` (URL pré-assinada ou `null`), `created_at`
-- `Token`: `access_token`, `token_type="bearer"`, `expires_in` (segundos)
+- `UserProfileRead`: `UserRead` + `is_active` e `updated_at` (respostas das rotas `/api/users/me*`)
+- `CsrfRead`: `csrf_token`; `LoginResponse`: `detail` (substituíram o `Token` planejado, ADR-010)
 - `PasswordChange`: `current_password`, `new_password` (mesmas regras de força; diferente da atual)
 
 ### 5.6 Autenticação e autorização
 
+Contrato completo em [`docs/DECISAO_AUTENTICACAO.md`](DECISAO_AUTENTICACAO.md) (ADR-010).
+
 - **Hash:** `pwdlib` com Argon2id (`PasswordHash.recommended()`). Funções `hash_password` e `verify_password` em `core/security.py`.
-- **JWT:** HS256, segredo `JWT_SECRET` (mín. 32 bytes aleatórios, vindo do Parameter Store em produção). Claims: `sub` (id do usuário), `jti` (uuid4), `iat`, `exp` (60 min). Sem refresh token no protótipo.
-- **`get_current_user`** (em `dependencies.py`): extrai o Bearer token (`OAuth2PasswordBearer(tokenUrl="/api/auth/login")`), decodifica, rejeita se expirado, se o `jti` estiver em `revoked_tokens` ou se o usuário não existir/estiver inativo → 401 com header `WWW-Authenticate: Bearer`.
-- **Logout:** insere o `jti` em `revoked_tokens`. O frontend também apaga o token local.
+- **JWT:** HS256, segredo `JWT_SECRET` (mín. 32 caracteres aleatórios, vindo do Parameter Store em produção). Claims: `sub` (id do usuário), `jti` (uuid4), `iat`, `exp` (`JWT_EXPIRE_MINUTES`, padrão 60). Sem refresh token no protótipo.
+- **Transporte:** o login devolve o JWT num cookie `HttpOnly`, `SameSite=Lax`, `Path=/`, sem `Domain`. Em produção o nome é `__Host-access_token` e o cookie é `Secure` (só HTTPS); em dev HTTP local, `access_token` sem `Secure`. O frontend nunca lê o JWT. Não há fallback para `Authorization: Bearer`.
+- **CSRF:** double-submit assinado (HMAC-SHA256, segredo `CSRF_SECRET`, separado do JWT) e vinculado à sessão: antes do login, a uma pré-sessão aleatória; depois, ao `jti`. `require_csrf` é dependência global do app: valida `Origin` (ou `Referer`) contra `CSRF_TRUSTED_ORIGINS` e o header `X-CSRF-Token`. O token expira em `CSRF_EXPIRE_MINUTES` (padrão 60) e é renovado no login.
+- **`get_current_user`** (em `dependencies.py`): lê o cookie, decodifica o JWT, exige `sub` UUID, rejeita se expirado, se o `jti` estiver em `revoked_tokens` ou se o usuário não existir/estiver inativo → 401 com `WWW-Authenticate: Cookie realm="api"`.
+- **Logout:** insere o `jti` em `revoked_tokens` até a expiração original e remove os cookies de acesso e CSRF. Uma cópia do cookie revogado é rejeitada.
 - **Autorização:** todas as rotas `/api/users/me*` operam somente sobre o usuário do token. Não há papéis (admin) no protótipo.
 - **Mensagens de erro de login** genéricas ("usuário ou senha inválidos"), sem revelar se o usuário existe.
 
 ### 5.7 Armazenamento de imagens
 
-- Interface `StorageService` com `upload(file_bytes, content_type, key) -> None`, `delete(key) -> None`, `get_url(key) -> str`.
+- Interface `StorageService` (`services/storage/base.py`) com `upload(key, file: UploadFile) -> None`, `delete(key) -> None`, `get_url(key) -> str`. A validação da imagem fica em `read_image`, no mesmo arquivo (ADR-016).
 - `LocalStorageService` (dev/testes): grava em `backend/media/` e serve via `StaticFiles` em `/api/media`.
 - `S3StorageService` (produção): `boto3` usando credenciais da IAM Role da EC2 (nunca access keys). `get_url` gera **URL pré-assinada** de GET (validade 1 h).
 - Seleção por `STORAGE_BACKEND=local|s3`.
-- Regras (no `user_service`): tipos aceitos `image/jpeg`, `image/png`, `image/webp`; tamanho máx. 2 MB; validar a assinatura real do arquivo (magic bytes), não só o `content_type`; chave `avatars/{user_id}/{uuid4}.{ext}`; ao trocar a imagem, apagar a anterior.
+- Regras: tipos aceitos JPEG, PNG e WebP, identificados pela assinatura real do arquivo (magic bytes), não pelo `content_type`; tamanho máx. 2 MB (o Nginx limita o corpo a 3 MB); chave `avatars/{user_id}/{uuid4}.{ext}`; ao trocar ou remover a imagem, a anterior é apagada.
 
 ### 5.8 Configuração (variáveis de ambiente)
 
@@ -411,15 +445,19 @@ Prefixo global: `/api`. Documentação automática em `/api/docs` (Swagger) e `/
 |---|---|---|
 | `ENVIRONMENT` | `dev` | `prod` |
 | `DATABASE_URL` | `postgresql+psycopg://app:app@db:5432/app` | endpoint do RDS (SSM) |
-| `JWT_SECRET` | `troque-me-...` | SSM SecureString |
+| `JWT_SECRET` | `troque-me-...` | SSM SecureString; em `prod` a API recusa o padrão de dev ou menos de 32 caracteres |
 | `JWT_EXPIRE_MINUTES` | `60` | `60` |
+| `CSRF_SECRET` | omitido (padrão local) | SSM SecureString; ≥ 32 caracteres e diferente do `JWT_SECRET` |
+| `CSRF_TRUSTED_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | `https://52-15-241-143.sslip.io` (obrigatório e só HTTPS em `prod`) |
+| `CSRF_EXPIRE_MINUTES` | `60` | `60` |
 | `STORAGE_BACKEND` | `local` | `s3` |
-| `S3_BUCKET` | — | `proto1-avatars-<sufixo>` |
+| `S3_BUCKET` | — | `proto1-avatars-grupob31641132` |
 | `AWS_REGION` | `us-east-2` | `us-east-2` |
 | `CORS_ORIGINS` | `http://localhost:5173` | vazio (mesma origem) |
 | `LOG_LEVEL` | `DEBUG` | `INFO` |
+| `PUBLIC_HOST` | — | `52-15-241-143.sslip.io`; lido só pelo `deploy.sh` (domínio do certificado), não pela API |
 
-`.env` **nunca** é commitado; `.env.example` sim. Em produção o `.env` é gerado na EC2 por `infra/ec2/load-env.sh` a partir do Parameter Store.
+`.env` **nunca** é commitado; `.env.example` sim. Em produção o `.env` fica na raiz do repositório na EC2 e é gerado por `infra/ec2/load-env.sh` a partir do Parameter Store a cada deploy; `ENVIRONMENT=prod` é fixado no `docker-compose.prod.yml` para o `.env` não conseguir desligar as validações de produção.
 
 ### 5.9 Outros padrões
 
@@ -446,18 +484,20 @@ Essa sequência de commits fica visível no histórico (por isso o merge **não*
 |---|---|---|
 | `core/security.py` | Unitário | hash ≠ senha; verify verdadeiro/falso; token válido decodifica; token expirado/adulterado falha |
 | `services/` | Unitário com banco | SQLite em memória; regras de negócio e exceções de domínio |
-| `services/storage/s3.py` | Unitário | `moto` (`mock_aws`) simulando o S3 |
-| `controllers/` | Integração | `TestClient` + override de `get_db` e `get_storage`; status HTTP, formato da resposta, autenticação |
-| Fluxo completo | Integração | registrar → login → `/me` → editar → trocar senha → logout → token rejeitado |
+| `core/csrf.py`, `core/origins.py`, `core/config.py` | Unitário | assinatura e expiração do token CSRF; normalização de origens; validações de produção |
+| `services/storage/s3.py` | — | Planejado com `moto`, mas não implementado: o upload para o S3 foi validado em produção (report 07, seção 7.3, e `docs/checklist_validacao.md`) |
+| `controllers/` | Integração | `TestClient` + override de `get_db` e `get_storage`; status HTTP, formato da resposta, autenticação, cookies e CSRF |
+| Fluxo de sessão | Integração | pré-sessão CSRF → login real (cookie) → `/me` → escritas → logout → cookie copiado rejeitado |
+
+O fluxo completo em produção (cadastro, perfil, foto, senha, logout) foi validado manualmente na #24 (`docs/checklist_validacao.md`).
 
 ### 6.3 Infraestrutura de testes
 
-- `conftest.py` com fixtures: `engine` (SQLite `sqlite+pysqlite:///:memory:` com `StaticPool`), `db_session` (rollback a cada teste), `client` (TestClient com overrides), `user_factory`, `auth_headers` (usuário logado), `storage` (`LocalStorageService` em diretório temporário).
+- `tests/conftest.py` com fixtures: `engine` (SQLite em memória com `StaticPool`, **recriado a cada teste**, ADR-009), `db_session`, `app` (com `get_db` apontando para a sessão do teste), `client` (sem CSRF), `csrf_client` (com pré-sessão CSRF), `user_factory`, `logged_user`/`logged_client` (login real por cookie) e `auth_user` (override de `get_current_user`). A fixture `auth_headers` planejada foi substituída por `logged_client` (ADR-010). Detalhes em `backend/README.md`.
 - Nomes: `test_<acao>_<cenario>_<resultado esperado>`, ex.: `test_register_with_existing_email_returns_409`.
 - Cobertura mínima: **70%** no backend (`pytest --cov=app --cov-fail-under=70`) — reduzida de 80% por causa do prazo.
-- Frontend: Vitest + React Testing Library, escopo mínimo da seção 7.7.
-- Testes que dependem de usuário autenticado usam a fixture `auth_user` + `app.dependency_overrides[get_current_user]` enquanto o login não estiver pronto; depois passam a usar `auth_headers` (token real).
-- CI (`.github/workflows/ci.yml`) roda lint + testes do backend e lint + testes + build do frontend em todo PR. PR com CI vermelho não é mergeado.
+- Frontend: Vitest + React Testing Library (seção 7.7).
+- CI (`.github/workflows/ci.yml`) roda em todo PR e push na `main`: **Backend** (`ruff check`, `ruff format --check`, `pytest` com cobertura mínima de 70%) e **Frontend** (ESLint, Prettier, Vitest, `tsc` + build). PR com CI vermelho não é mergeado (combinado da equipe; a proteção da `main` exige 1 aprovação, seção 11).
 
 ---
 
@@ -469,7 +509,7 @@ Essa sequência de commits fica visível no histórico (por isso o merge **não*
 |---|---|---|
 | Base | React 19 + TypeScript + Vite | Padrão atual; TypeScript pega erros cedo |
 | Rotas | React Router v7 (modo biblioteca) | Rotas públicas/protegidas |
-| HTTP | Axios com instância única e interceptors | Injeta o token e trata 401 em um só lugar |
+| HTTP | Axios com instância única e interceptors | Injeta o header CSRF nas escritas e trata 401/403 em um só lugar |
 | Formulários | React Hook Form + Zod | Validação declarativa espelhando as regras do backend |
 | Estilo | Tailwind CSS v4 | Produtivo para quem não domina CSS; consistente |
 | Notificações | `sonner` (toasts) | Feedback de sucesso/erro |
@@ -481,7 +521,8 @@ Essa sequência de commits fica visível no histórico (por isso o merge **não*
 ```
 frontend/src/
 ├── main.tsx
-├── App.tsx                    # providers + router
+├── App.tsx                    # providers (AuthProvider, Toaster) + router
+├── index.css                  # Tailwind + variáveis do tema claro/escuro
 ├── routes/
 │   ├── router.tsx             # definição das rotas
 │   ├── ProtectedRoute.tsx     # redireciona para /login se não autenticado
@@ -494,23 +535,30 @@ frontend/src/
 │   ├── ChangePasswordPage.tsx
 │   └── NotFoundPage.tsx
 ├── layouts/
-│   └── DashboardLayout.tsx    # sidebar + topbar + <Outlet/>
+│   ├── AuthLayout.tsx         # moldura das telas de login e cadastro
+│   └── DashboardLayout.tsx    # sidebar (desktop) / menu por botão (celular) + topbar + <Outlet/>
 ├── components/
 │   ├── ui/                    # Button, Input, Card, Spinner, Avatar
-│   └── forms/FormField.tsx
+│   ├── forms/                 # FormField, PasswordRules (regras de senha ao vivo)
+│   ├── profile/               # ProfileForm, AvatarUploader (preview + validação de 2 MB)
+│   ├── ThemeToggle.tsx        # alterna tema claro/escuro (#37)
+│   └── PageLoader.tsx         # spinner enquanto a sessão é verificada
 ├── contexts/
-│   └── AuthContext.tsx        # user, token, login(), logout(), refreshUser()
+│   └── AuthContext.tsx        # user, isLoading, login(), logout(), refreshUser()
 ├── hooks/
-│   └── useAuth.ts
+│   ├── useAuth.ts
+│   └── useTheme.ts            # tema salvo em localStorage (preferência visual, não sensível)
 ├── services/
-│   ├── api.ts                 # axios instance + interceptors
+│   ├── api.ts                 # axios instance + interceptors (CSRF, 401, 403 CSRF_INVALID)
 │   ├── authService.ts         # register, login, logout
-│   └── userService.ts         # getMe, updateMe, changePassword, uploadAvatar
-├── schemas/                   # schemas Zod dos formulários
+│   └── userService.ts         # getMe, updateMe, changePassword, uploadAvatar, deleteAvatar
+├── schemas/                   # schemas Zod dos formulários (authSchemas, profileSchemas)
 ├── types/
 │   └── user.ts                # tipos espelhando os schemas da API
+├── test/                      # setup do Vitest e utilitários dos testes
 └── utils/
-    └── formatDate.ts
+    ├── apiError.ts            # extrai `detail`/`code` e erros por campo da resposta da API
+    └── formatDate.ts          # datas em America/Fortaleza
 ```
 
 ### 7.3 Rotas
@@ -529,18 +577,20 @@ Menu lateral do dashboard: **Início**, **Meu perfil**, **Alterar senha**, **Sai
 
 ### 7.4 Fluxo de autenticação no cliente
 
-1. Login chama `POST /api/auth/login` → recebe `access_token`.
-2. Token salvo em `localStorage` (chave `proto1.token`) e no estado do `AuthContext`; em seguida `GET /api/users/me` carrega o usuário.
-3. Interceptor de requisição adiciona `Authorization: Bearer <token>`.
-4. Interceptor de resposta: em **401**, limpa o token, zera o contexto e redireciona para `/login` com toast "Sessão expirada".
-5. Ao abrir a aplicação, se existir token, chama `/me` para validar antes de renderizar rotas protegidas (mostrar spinner enquanto isso).
-6. Logout chama `POST /api/auth/logout`, depois limpa tudo localmente (mesmo se a chamada falhar).
+A sessão é um cookie `HttpOnly`: o frontend **nunca** lê, guarda ou envia o JWT (ADR-010).
 
-> Trade-off registrado: `localStorage` é vulnerável a XSS. Mitigações: React escapa conteúdo por padrão, proibido usar `dangerouslySetInnerHTML`, token curto (60 min). Cookie `httpOnly` fica como evolução futura.
+1. Antes da primeira escrita, `api.ts` busca `GET /api/auth/csrf` e guarda o token CSRF **só em memória**; o interceptor de requisição o envia no header `X-CSRF-Token` em todo `POST`/`PUT`/`PATCH`/`DELETE`.
+2. Login chama `POST /api/auth/login`; a API grava o cookie de sessão e renova o CSRF. O `AuthContext` descarta o token CSRF antigo e chama `GET /api/users/me` para carregar o usuário.
+3. Interceptor de resposta: em **403 `CSRF_INVALID`**, busca um token novo e repete a requisição uma vez; em **401**, zera o contexto (as rotas protegidas redirecionam para `/login`) e mostra o toast "Sessão expirada" a quem estava logado.
+4. Ao abrir a aplicação, chama `/me` para saber se há sessão antes de renderizar rotas protegidas (spinner enquanto isso).
+5. Cadastro chama `POST /api/auth/register` e, em seguida, faz o login com os mesmos dados.
+6. Logout chama `POST /api/auth/logout` (a API revoga o JWT e remove os cookies) e limpa o usuário e o CSRF locais.
+
+> O plano original guardava o token em `localStorage`, vulnerável a XSS. Com o cookie `HttpOnly`, um script injetado não lê o token; a proteção CSRF cobre o envio automático do cookie. Continua proibido usar `dangerouslySetInnerHTML`. O único dado em `localStorage` é a preferência de tema (`proto1.theme`).
 
 ### 7.5 Comunicação com a API
 
-- `baseURL` = `/api` (mesma origem). Em dev, o `vite.config.ts` faz proxy de `/api` para `http://localhost:8000`, então não há CORS nem URLs diferentes por ambiente.
+- `baseURL` = `/api` (mesma origem). Em dev, o `vite.config.ts` faz proxy de `/api` para `http://localhost:8000`, então não há CORS nem URLs diferentes por ambiente. A mesma origem também é o que permite o cookie `SameSite=Lax` e a validação de `Origin` do CSRF.
 - Login usa `application/x-www-form-urlencoded` (exigência do `OAuth2PasswordRequestForm`); upload usa `multipart/form-data`; o resto JSON.
 - Erros da API exibem `detail` no toast ou embaixo do campo correspondente (409 de email → erro no campo email).
 
@@ -555,15 +605,14 @@ Menu lateral do dashboard: **Início**, **Meu perfil**, **Alterar senha**, **Sai
 - Preview da imagem antes do upload; validação de tipo e tamanho (2 MB) também no cliente.
 - Sem segredos no frontend; variáveis `VITE_*` são públicas.
 
-### 7.7 Testes do frontend (mínimo, por causa do prazo)
+- Tema claro/escuro (#37), com a preferência do sistema como padrão, e transições suaves entre telas (#53), respeitando `prefers-reduced-motion`.
 
-Obrigatórios (3 arquivos):
+### 7.7 Testes do frontend
 
-- `ProtectedRoute.test.tsx`: redireciona sem usuário; renderiza com usuário.
-- `LoginPage.test.tsx`: erros de validação; chama o service com os dados certos; mostra erro em 401.
-- `RegisterPage.test.tsx`: senhas diferentes bloqueiam o envio; erro 409 aparece no campo.
+O mínimo planejado eram 3 arquivos (por causa do prazo); foram entregues **10**, todos rodando no CI:
 
-Desejáveis (se sobrar tempo): `AuthContext`, página de perfil, página de senha.
+- Obrigatórios: `ProtectedRoute.test.tsx` (redireciona sem usuário; renderiza com usuário), `LoginPage.test.tsx` (validação, chamada ao service, erro em 401) e `RegisterPage.test.tsx` (senhas diferentes bloqueiam o envio; erro 409 no campo).
+- Adicionais: `router.test.tsx`, `DashboardLayout.test.tsx`, `DashboardHomePage.test.tsx`, `ProfilePage.test.tsx`, `ChangePasswordPage.test.tsx`, `ThemeToggle.test.tsx` e `formatDate.test.ts`.
 
 ---
 
