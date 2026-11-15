@@ -5,6 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Protótipo AWS</title>
+    <script>
+      // Aplica o tema salvo (ou o do sistema) antes do React carregar, para a tela não
+      // piscar branca. A chave e os valores são os mesmos de src/hooks/useTheme.ts (#37).
+      ;(function () {
+        var theme
+        try {
+          theme = localStorage.getItem('proto1.theme')
+        } catch (e) {}
+        if (theme !== 'light' && theme !== 'dark') {
+          theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        }
+        document.documentElement.classList.toggle('dark', theme === 'dark')
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>

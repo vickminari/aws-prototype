@@ -14,7 +14,7 @@ export function PasswordRules({ password }: PasswordRulesProps) {
         return (
           <li
             key={rule.label}
-            className={`flex items-center gap-2 ${isMet ? 'text-green-700' : 'text-slate-500'}`}
+            className={`flex items-center gap-2 ${isMet ? 'text-green-700 dark:text-green-400' : 'text-slate-500 dark:text-slate-400'}`}
           >
             <span aria-hidden="true" className="w-4 text-center font-semibold">
               {isMet ? '✓' : '•'}

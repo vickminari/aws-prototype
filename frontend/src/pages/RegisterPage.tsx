@@ -116,7 +116,7 @@ export function RegisterPage() {
           {(control) => (
             <textarea
               rows={3}
-              className={`rounded-md border px-3 py-2 text-sm focus:outline-2 focus:outline-blue-600 ${errors.description ? 'border-red-500' : 'border-slate-300'}`}
+              className={`rounded-md border px-3 py-2 text-sm focus:outline-2 focus:outline-blue-600 ${errors.description ? 'border-red-500' : 'border-slate-300 dark:border-slate-700'}`}
               {...control}
               {...register('description')}
             />
@@ -126,9 +126,9 @@ export function RegisterPage() {
           Criar conta
         </Button>
       </form>
-      <p className="mt-6 text-center text-sm text-slate-600">
+      <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
         Já tem conta?{' '}
-        <Link to="/login" className="font-medium text-blue-600 hover:underline">
+        <Link to="/login" className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
           Entrar
         </Link>
       </p>

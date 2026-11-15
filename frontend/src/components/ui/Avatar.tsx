@@ -35,7 +35,7 @@ export function Avatar({ name, src, size = 'md', className = '' }: AvatarProps) 
     <span
       role="img"
       aria-label={name}
-      className={`${base} bg-blue-100 font-semibold text-blue-700`}
+      className={`${base} bg-blue-100 dark:bg-blue-900 font-semibold text-blue-700 dark:text-blue-300`}
     >
       {getInitials(name)}
     </span>

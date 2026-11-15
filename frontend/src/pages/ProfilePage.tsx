@@ -10,7 +10,7 @@ export function ProfilePage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <h1 className="text-2xl font-semibold text-slate-900">Meu perfil</h1>
+      <h1 className="text-2xl font-semibold text-slate-900 dark:text-slate-100">Meu perfil</h1>
       <AvatarUploader user={user} />
       <ProfileForm user={user} />
     </div>

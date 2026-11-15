@@ -28,7 +28,7 @@ export function FormField({ label, error, hint, children }: FormFieldProps) {
 
   return (
     <div className="flex flex-col gap-1">
-      <label htmlFor={id} className="text-sm font-medium text-slate-700">
+      <label htmlFor={id} className="text-sm font-medium text-slate-700 dark:text-slate-300">
         {label}
       </label>
       {children({
@@ -37,7 +37,10 @@ export function FormField({ label, error, hint, children }: FormFieldProps) {
         'aria-describedby': message ? messageId : undefined,
       })}
       {message && (
-        <p id={messageId} className={`text-sm ${error ? 'text-red-600' : 'text-slate-500'}`}>
+        <p
+          id={messageId}
+          className={`text-sm ${error ? 'text-red-600 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}
+        >
           {message}
         </p>
       )}

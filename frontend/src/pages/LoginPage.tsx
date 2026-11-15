@@ -39,7 +39,10 @@ export function LoginPage() {
     <AuthLayout title="Entrar" subtitle="Acesse sua conta para continuar.">
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
         {formError && (
-          <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p
+            role="alert"
+            className="rounded-md bg-red-50 dark:bg-red-950 px-3 py-2 text-sm text-red-700 dark:text-red-300"
+          >
             {formError}
           </p>
         )}
@@ -60,9 +63,12 @@ export function LoginPage() {
           Entrar
         </Button>
       </form>
-      <p className="mt-6 text-center text-sm text-slate-600">
+      <p className="mt-6 text-center text-sm text-slate-600 dark:text-slate-400">
         Não tem conta?{' '}
-        <Link to="/register" className="font-medium text-blue-600 hover:underline">
+        <Link
+          to="/register"
+          className="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
           Cadastre-se
         </Link>
       </p>
