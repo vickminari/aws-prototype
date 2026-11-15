@@ -8,6 +8,9 @@ RUN npm run build
 
 # Estágio 2: serve o build com Nginx
 FROM nginx:alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# As configurações ficam fora do conf.d; o 40-https.sh escolhe quais ativar ao iniciar (#23)
+RUN rm /etc/nginx/conf.d/default.conf
+COPY nginx/ /etc/nginx/proto1/
+COPY --chmod=755 nginx/40-https.sh /docker-entrypoint.d/40-https.sh
 COPY --from=build /app/dist /usr/share/nginx/html
-EXPOSE 80
+EXPOSE 80 443

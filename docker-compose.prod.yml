@@ -1,9 +1,11 @@
 # Produção na EC2 (ARQ §9). Desenvolvimento usa docker-compose.yml.
-#   infra/ec2/deploy.sh   → atualiza o código, sobe os containers e testa /api/health
+#   infra/ec2/deploy.sh   → atualiza o código, sobe os containers, emite o certificado
+#                           HTTPS na primeira vez e testa /api/health
 #
 # Sem container de banco: a API usa o RDS (#20). Configuração e segredos vêm do
 # .env na raiz do repositório, gerado na EC2 a partir do Parameter Store (#21);
-# variáveis em backend/.env.example.
+# variáveis em backend/.env.example. PUBLIC_HOST (ex.: 52-15-241-143.sslip.io) é o
+# domínio do certificado HTTPS, usado só pelo deploy.sh.
 
 # Rotação dos logs: sem limite o json-file cresce até encher o disco da EC2
 x-logging: &logging
@@ -37,10 +39,16 @@ services:
     build: ./frontend
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # Certificado do Let's Encrypt e arquivos do desafio HTTP-01, gravados pelo certbot
+      - letsencrypt:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
     restart: unless-stopped
     healthcheck:
+      # /api/health responde por HTTP com ou sem HTTPS ativo (as outras rotas redirecionam).
       # 127.0.0.1: o Nginx escuta só IPv4 e "localhost" pode resolver para ::1
-      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/api/health"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -50,3 +58,21 @@ services:
         # O Nginx resolve "api" só ao iniciar: reinicia junto quando a API é recriada
         restart: true
     logging: *logging
+
+  # Renova o certificado (válido por 90 dias) quando faltam menos de 30 dias. A emissão
+  # inicial é feita pelo deploy.sh; o web recarrega o certificado a cada 6 h (40-https.sh).
+  certbot:
+    image: certbot/certbot:v5.10.0
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      - "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 43200 & wait $${!}; done"
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  letsencrypt:
+  certbot-www:
