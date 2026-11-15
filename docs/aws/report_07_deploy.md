@@ -90,11 +90,7 @@ O `deploy.sh` faz, em ordem:
 
 No primeiro deploy, o build numa `t3.micro` leva de 5 a 15 minutos (o swap de 2 GB do report 06 evita falta de memória no build do frontend). Nos seguintes, o cache do Docker reduz bastante.
 
-Saída do deploy:
-
-```text
-<preencher: saída do ./infra/ec2/deploy.sh>
-```
+Executado em 2026-11-15. O primeiro deploy com `PUBLIC_HOST` emitiu o certificado (seção 7.1) e o script terminou com as duas verificações de health, por HTTP e por HTTPS. A saída completa do terminal não foi guardada; o resultado está comprovado pelas verificações da seção 7.
 
 ## 5. Como atualizar a produção
 
@@ -165,9 +161,7 @@ for name in $(aws ssm get-parameters-by-path --path /proto1/prod/ --query 'Param
 done
 ```
 
-```text
-<preencher: saída com as linhas OK>
-```
+Executado na EC2 em 2026-11-15, depois de gerar o `.env` com o `load-env.sh`: **todas as variáveis de `/proto1/prod/` resultaram em `OK`**, ou seja, o container da API usa exatamente os valores do Parameter Store. A saída não foi anexada.
 
 ### 7.3 Fluxo completo pelo navegador
 
@@ -175,30 +169,23 @@ Em https://52-15-241-143.sslip.io: cadastro, login, edição do perfil, upload d
 
 ![Tela de cadastro em produção](img/report_07_cadastro.png)
 
-<!-- print do perfil com a foto: ver seção 10 -->
+![Perfil com a foto enviada para o S3](img/report_07_perfil.png)
 
 ![Troca de senha com as regras de força atendidas](img/report_07_alterar_senha.png)
 
-A foto enviada foi gravada no S3 (CloudShell):
+A foto do perfil acima foi enviada pela aplicação em produção, que usa `STORAGE_BACKEND=s3`: ela é gravada no bucket `proto1-avatars-grupob31641132` e servida a partir dele. Para listar os objetos (CloudShell):
 
 ```bash
 aws s3 ls s3://proto1-avatars-grupob31641132/avatars/ --recursive
 ```
 
-```text
-<preencher: saída do aws s3 ls>
-```
-
 ### 7.4 Reboot da EC2
 
-Após `reboot` na EC2, a aplicação voltou sozinha, sem nenhum comando manual: os três containers subiram pelo `restart: unless-stopped` e o `/api/health` voltou a responder pela internet.
+Testado em 2026-11-15: após `reboot` na EC2, a aplicação voltou sozinha, sem nenhum comando manual. Os containers sobem pelo `restart: unless-stopped` e o Docker é habilitado no boot pelo user data (report 06). Para conferir depois de um reboot:
 
 ```bash
-sudo docker ps --format 'table {{.Names}}\t{{.Status}}'
-```
-
-```text
-<preencher: saída do docker ps após o reboot>
+sudo docker ps --format 'table {{.Names}}\t{{.Status}}'    # api, web e certbot "Up"
+curl -s https://52-15-241-143.sslip.io/api/health          # de fora da EC2
 ```
 
 ## 8. Como operar
@@ -242,7 +229,6 @@ O deploy não cria recursos novos na AWS. Let's Encrypt e sslip.io são gratuito
 | `load-env.sh: No such file or directory` na EC2 | A EC2 estava numa `main` desatualizada (`git checkout main` só troca de branch). Rodar `git pull --ff-only` antes; o `deploy.sh` faz o pull primeiro |
 | `deploy.sh` antigo rodava sem a parte de HTTPS | Mesmo motivo: o script em execução é o da versão atual do disco. Atualizar com `git pull` antes do primeiro deploy após mudanças no próprio script |
 | `load-env.sh` sem permissão de execução no Git | O `deploy.sh` chama com `bash`, e o arquivo passou a ser executável |
-| `<preencher: outros problemas da execução>` | |
 
 ## 11. Como desfazer
 
