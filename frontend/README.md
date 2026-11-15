@@ -71,10 +71,11 @@ src/
 ├── pages/                Uma página por rota
 ├── layouts/              AuthLayout (login/cadastro) e DashboardLayout (sidebar + topbar)
 ├── components/ui/        Componentes visuais base: Button, Input, Card, Spinner, Avatar
+├── components/           ThemeToggle (switch de tema), PageLoader e PlaceholderPage
 ├── components/forms/     FormField (label, ajuda e erro para controles que não são o Input) e PasswordRules
 ├── components/profile/   AvatarUploader (foto de perfil) e ProfileForm (dados do perfil)
 ├── contexts/             AuthContext.tsx (AuthProvider: mantém a sessão)
-├── hooks/                useAuth (hook, tipo e contexto da sessão)
+├── hooks/                useAuth (hook, tipo e contexto da sessão) e useTheme (tema claro/escuro)
 ├── services/             Chamadas HTTP: api.ts (axios + CSRF + 401), authService, userService
 ├── schemas/              Schemas Zod dos formulários (authSchemas.ts, profileSchemas.ts)
 ├── types/                Tipos espelhando os schemas da API (user.ts)
@@ -161,6 +162,34 @@ Edição parcial (`PATCH`): envie só o que mudou. O [`ProfileForm`](src/compone
 
 Upload de imagem: valide no navegador com `validateAvatarFile` (JPEG, PNG ou WebP, até 2 MB) antes de enviar; mostre o preview com `URL.createObjectURL` e libere a memória com `URL.revokeObjectURL`. O backend confere de novo pela assinatura real do arquivo (`INVALID_IMAGE`). Exemplo: [`AvatarUploader`](src/components/profile/AvatarUploader.tsx).
 
+## Tema claro e escuro
+
+O switch de tema (`ThemeToggle`, #37) fica no canto superior direito das telas públicas e na barra superior do dashboard.
+
+- O tema é a classe `dark` no `<html>`. O script do [`index.html`](index.html) a aplica antes do React carregar, com a escolha salva em `localStorage` (`proto1.theme`) ou, na primeira visita, o tema do sistema. Preferência visual não é dado sensível; a regra contra Web Storage vale para o JWT.
+- [`useTheme`](src/hooks/useTheme.ts) devolve `{ theme, toggleTheme }` e não precisa de Provider.
+- Transição: o novo tema se espalha em círculo a partir do switch (View Transitions). Navegadores sem suporte fazem um fade; com "reduzir movimento" ativado, a troca é instantânea.
+
+**Toda cor precisa da variante escura.** Ao usar uma classe de cor, acrescente a `dark:` correspondente, seguindo a tabela usada no projeto:
+
+| Claro                                      | Escuro                                      |
+| ------------------------------------------ | ------------------------------------------- |
+| `bg-white`                                 | `dark:bg-slate-900`                         |
+| `bg-slate-50` (fundo da página)            | `dark:bg-slate-950`                         |
+| `hover:bg-slate-50` / `hover:bg-slate-100` | `dark:hover:bg-slate-800`                   |
+| `text-slate-900`                           | `dark:text-slate-100`                       |
+| `text-slate-700`                           | `dark:text-slate-300`                       |
+| `text-slate-600` / `text-slate-500`        | `dark:text-slate-400`                       |
+| `border-slate-200`                         | `dark:border-slate-800`                     |
+| `border-slate-300`                         | `dark:border-slate-700`                     |
+| `text-blue-600` / `text-blue-700`          | `dark:text-blue-400` / `dark:text-blue-300` |
+| `bg-blue-50` / `bg-blue-100`               | `dark:bg-blue-950` / `dark:bg-blue-900`     |
+| `text-red-600` / `text-red-700`            | `dark:text-red-400` / `dark:text-red-300`   |
+| `bg-red-50` / `hover:bg-red-50`            | `dark:bg-red-950` / `dark:hover:bg-red-950` |
+| `text-green-700`                           | `dark:text-green-400`                       |
+
+Botões azuis e vermelhos com texto branco (`bg-blue-600`, `bg-red-600`) funcionam nos dois temas e não precisam de variante.
+
 ## Boas práticas (ARQ §7.6), checklist antes do PR
 
 - [ ] Componentes pequenos e de função única; páginas compõem componentes.
@@ -171,4 +200,5 @@ Upload de imagem: valide no navegador com `validateAvatarFile` (JPEG, PNG ou Web
 - [ ] Layout responsivo (sidebar vira menu no celular).
 - [ ] Preview da imagem antes do upload; validação de tipo e tamanho (2 MB) também no cliente.
 - [ ] Sem segredos no frontend; variáveis `VITE_*` são públicas.
+- [ ] Cores com variante `dark:` (tabela em [Tema claro e escuro](#tema-claro-e-escuro)); conferir a tela nos dois temas.
 - [ ] `npm run lint`, `npm run test -- --run` e `npm run build` passando.
