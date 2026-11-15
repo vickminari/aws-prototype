@@ -20,7 +20,7 @@ Nenhum. Este é o primeiro report.
 | Configuração | Valor | Por quê |
 |---|---|---|
 | Tipo de conta | Nova experiência da AWS, plano gratuito | Créditos iniciais sem cobrança no cartão enquanto houver saldo |
-| Projeto | `proto1` | Todos os recursos do protótipo ficam neste projeto |
+| Projeto | `proto-tes` | Todos os recursos do protótipo ficam neste projeto; `proto1` é o prefixo dos recursos e o valor da tag `Project` |
 | Região | `us-east-2` (Ohio) | Atribuída pela AWS conforme o país do cadastro (Brasil); não dá para trocar |
 | Acesso da equipe | Convite pela página **Equipe** do AWS Settings | Na nova experiência não existem IAM users para pessoas |
 | Login de cada membro | AWS Builder ID próprio, com MFA | Cada um tem sua identidade; nada de senha compartilhada |
@@ -34,14 +34,14 @@ Nenhum. Este é o primeiro report.
 
 1. Conta criada em "Sign up for AWS (new)", no plano gratuito.
 2. MFA ativado no AWS Builder ID do proprietário.
-3. Projeto `proto1` em AWS Settings → **Projetos**.
+3. Projeto `proto-tes` em AWS Settings → **Projetos**.
 4. Região conferida em Projeto → Visão geral → Informações adicionais → Região: `us-east-2`.
 
 ### 4.2 Equipe
 
-1. AWS Settings → **Equipe** → *Convidar um novo membro* → email do membro + projeto `proto1` (repetido para os 4 membros).
+1. AWS Settings → **Equipe** → *Convidar um novo membro* → email do membro + projeto `proto-tes` (repetido para os 4 membros).
 2. Cada membro recebe um email, tem **14 dias** para aceitar, cria o próprio AWS Builder ID e ativa o MFA.
-3. Na aba **Membros**, os 5 aparecem com acesso ao `proto1`.
+3. Na aba **Membros**, os 5 aparecem com acesso ao `proto-tes`.
    ![Membros da equipe](img/report_00_membros.png)
 
 ### 4.3 Custos
@@ -57,7 +57,7 @@ Na nova experiência da AWS, as pessoas não são IAM users: o proprietário con
 | Papel | Quem | O que pode fazer |
 |---|---|---|
 | Proprietário | José Victor | Tudo, inclusive faturamento, créditos e convidar/remover membros |
-| Administrador do projeto | Os outros 4 membros | Criar, editar e apagar qualquer recurso do `proto1`; **não** veem faturamento nem convidam pessoas |
+| Administrador do projeto | Os outros 4 membros | Criar, editar e apagar qualquer recurso do `proto-tes`; **não** veem faturamento nem convidam pessoas |
 
 A AWS não permite restringir a permissão dos membros. Por isso a equipe combinou:
 
@@ -69,7 +69,7 @@ A AWS não permite restringir a permissão dos membros. Por isso a equipe combin
 
 | Recurso | Nome | ID |
 |---|---|---|
-| Projeto | `proto1` | 490711050705 |
+| Projeto | `proto-tes` | 490711050705 |
 | AWS Budget | `proto1-budget` | — |
 
 ## 7. Verificação
@@ -84,7 +84,7 @@ A saída mostra só a identidade (conta e ARN), sem nenhuma chave.
 
 ## 8. Como os outros usam isto
 
-- **Entrar na AWS:** aceitar o convite, fazer login com o Builder ID e escolher o projeto `proto1`.
+- **Entrar na AWS:** aceitar o convite, fazer login com o Builder ID e escolher o projeto `proto-tes`.
 - **Rodar comandos:** pelo CloudShell, sempre na região `us-east-2`.
 - **Criar recursos:** prefixo `proto1-` no nome e as tags `Project=proto1` e `Owner=<seu nome>`.
 
