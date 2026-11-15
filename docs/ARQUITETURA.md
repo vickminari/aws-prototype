@@ -1,0 +1,1028 @@
+# Arquitetura e Decisões Técnicas — 1º Protótipo
+
+> **Disciplina:** Tópicos em Engenharia de Software (Engenharia de Software aplicada à AWS) — UFPI
+> **Equipe:** 5 integrantes (nomes e responsabilidades no `README.md`; tarefas nas [issues](https://github.com/vickminari/aws-prototype/issues)). Responsável pelo setup do repositório, pela conta AWS e pelo IAM: Victor.
+> **Prazo:** 1 semana (7 dias). Ver seção 1.3 para a priorização e o que foi simplificado por causa disso.
+> **Status deste documento:** fonte da verdade do projeto. Toda decisão nova ou alterada deve ser registrada aqui (seção 15) **no mesmo PR** que a implementa.
+
+---
+
+## Sumário
+
+1. Escopo e requisitos
+2. Visão geral da arquitetura
+3. Registro de decisões (resumo)
+4. Estrutura do repositório
+5. Backend
+6. Estratégia de testes (TDD simplificado)
+7. Frontend
+8. Infraestrutura AWS
+9. Deploy
+10. Documentação do projeto (padrão comum, código, AWS, diário)
+11. Fluxo de trabalho Git e rastreabilidade
+12. Segurança
+13. Custos e cuidados com a conta
+14. Fora do escopo / evoluções futuras
+15. Log de decisões (ADRs)
+
+---
+
+## 1. Escopo e requisitos
+
+### 1.1 Requisitos da especificação → como serão atendidos
+
+| # | Requisito (especificação) | Solução |
+|---|---|---|
+| A1 | Login/Logout, autenticação e autorização | JWT (Bearer) + hash Argon2 nas senhas; logout com revogação do token no servidor (tabela `revoked_tokens`) |
+| A1 | Registro de novos usuários | `POST /api/auth/register` + página de cadastro |
+| A2 | Dashboard para usuário autenticado | SPA React com rota protegida: menu lateral (Início, Meu perfil, Alterar senha, Sair) |
+| A2 | Edição de perfil e troca de senha | `PATCH /api/users/me`, `PUT /api/users/me/password`, `POST /api/users/me/avatar` |
+| A2 | Propriedades: nome completo, username, password, email, imagem, descrição, data de criação | Modelo `User` (seção 5.4); imagem no **S3** |
+| B | VPC | VPC própria `10.0.0.0/16` com subnets públicas e privadas em 2 AZs |
+| B | EC2 para hospedar a aplicação | 1 instância `t3.micro` (Amazon Linux 2023) rodando Docker Compose |
+| B | Grupos de segurança | `proto1-sg-web` (EC2) e `proto1-sg-db` (RDS, aceita só a EC2) |
+| B | Tabela de rotas | Tabela pública (rota `0.0.0.0/0` → Internet Gateway) e tabela privada (só rota local + endpoint S3) |
+| B | IP público | Elastic IP associado à EC2 |
+| C | Repositório Git documentado | Monorepo no GitHub, README, este documento, `docs/aws/report_*.md`, scripts em `infra/` |
+| C | Contribuição individual visível | Issues atribuídas, branches por issue, PRs revisados, merge que preserva commits, login individual na AWS (Builder ID de cada membro) + CloudTrail |
+
+### 1.2 Serviços AWS utilizados
+
+Obrigatórios: **VPC** (subnets, IGW, route tables, security groups), **EC2**, **Elastic IP**.
+Adicionais (decisão da equipe): **RDS PostgreSQL** (banco), **S3** (imagens de perfil), **AWS Settings → Equipe** (acesso dos membros), **IAM** (role da EC2), **SSM Parameter Store** (segredos), **Systems Manager Session Manager** (acesso à EC2 sem SSH aberto), **VPC Gateway Endpoint para S3**, **AWS Budgets** e **CloudTrail** (controle de custo e auditoria).
+
+### 1.3 Restrição de prazo (1 semana) e priorização
+
+**Princípios para caber no prazo:**
+
+1. **Contratos primeiro.** Os endpoints e schemas (seção 5.5) já estão definidos; backend e frontend trabalham em paralelo contra esse contrato desde o dia 1.
+2. **Dependências quebradas por stubs.** O esqueleto do backend já nasce com `get_current_user` declarado em `dependencies.py` (stub que lança 401). Quem implementa perfil/avatar testa usando `app.dependency_overrides[get_current_user]` com um usuário de fixture — **não precisa esperar o login ficar pronto**.
+3. **Deploy cedo ("walking skeleton").** Assim que a EC2 existir (dia 3), sobe-se o esqueleto (health + frontend placeholder). Do dia 4 em diante, cada merge na `main` é implantado. O dia 5 é só atualização, não "primeiro deploy".
+4. **Feature freeze no fim do dia 5.** Dias 6 e 7 são para validação, correções, documentação e ensaio.
+5. **PRs pequenos e revisão rápida.** Revisor responde em até 4 h; reunião diária de 15 min.
+
+**Classificação do escopo:**
+
+| Prioridade | Itens |
+|---|---|
+| **Obrigatório** (requisito do professor) | Registro, login, logout, dashboard, edição de perfil, troca de senha, imagem de perfil; VPC, subnets, route tables, SG, EC2, Elastic IP; repositório documentado com reports |
+| **Planejado** (decisão da equipe, mantido) | RDS, S3, IAM role, Parameter Store, Session Manager, CI, TDD no backend, revogação de token no logout |
+| **Simplificado pelo prazo** | Cobertura mínima de 70% (era 80%); testes de frontend limitados a 3 arquivos (seção 7.7); scripts AWS CLI lineares, sem idempotência (seção 10.5); diagrama em Mermaid (ícones oficiais da AWS só se sobrar tempo) |
+| **Só se sobrar tempo (dia 6)** | Teardown automatizado (o report descreve a ordem manual), menu responsivo elaborado, prints do CloudTrail nos reports, testes de frontend adicionais |
+
+**Plano B (troca só de configuração, sem mudar código):**
+
+| Risco | Gatilho | Plano B |
+|---|---|---|
+| RDS com problema de rede/conexão | Não conectado até o fim do dia 3 | Serviço `postgres:16` no `docker-compose.prod.yml` da EC2; só muda `DATABASE_URL`. Registrar no report 04 |
+| S3/IAM role com problema | Upload falhando até o dia 4 | `STORAGE_BACKEND=local` com volume Docker na EC2 |
+| Build do React estourando memória na EC2 | Build travando | Fazer `npm run build` localmente/CI e copiar `dist/`, ou aumentar o swap |
+| Internet ruim na apresentação | — | Vídeo gravado da demo (issue de apresentação) |
+
+---
+
+## 2. Visão geral da arquitetura
+
+### 2.1 Diagrama da infraestrutura
+
+```mermaid
+flowchart LR
+    U[Usuário / Navegador] -- HTTP :80 --> EIP[(Elastic IP)]
+
+    subgraph AWS["AWS — região us-east-2"]
+      subgraph VPC["VPC proto1-vpc 10.0.0.0/16"]
+        IGW[Internet Gateway]
+
+        subgraph PUB["Subnet pública 10.0.1.0/24 (us-east-2a)"]
+          subgraph EC2["EC2 t3.micro — sg-web"]
+            NGINX[Nginx<br/>React build + proxy /api]
+            API[FastAPI<br/>Uvicorn]
+          end
+        end
+
+        subgraph PRIV["Subnets privadas 10.0.11.0/24 + 10.0.12.0/24"]
+          RDS[(RDS PostgreSQL<br/>db.t4g.micro — sg-db)]
+        end
+
+        S3EP[VPC Endpoint<br/>Gateway S3]
+      end
+
+      S3[(S3 bucket<br/>avatares — privado)]
+      SSM[SSM Parameter Store<br/>segredos]
+    end
+
+    EIP --- IGW --> NGINX
+    NGINX -- /api/* --> API
+    API -- 5432 --> RDS
+    API -- boto3 via IAM role --> S3EP --> S3
+    API -. lê na inicialização .-> SSM
+```
+
+### 2.2 Fluxo de uma requisição autenticada
+
+```mermaid
+sequenceDiagram
+    participant B as Browser (React)
+    participant N as Nginx (EC2)
+    participant C as Controller (FastAPI router)
+    participant S as Service
+    participant M as Model (SQLAlchemy)
+    participant DB as RDS PostgreSQL
+
+    B->>N: GET /api/users/me (Authorization: Bearer <jwt>)
+    N->>C: proxy_pass http://api:8000
+    C->>C: dependency get_current_user (valida JWT, checa revogação)
+    C->>S: user_service.get_profile(user)
+    S->>M: consulta via Session
+    M->>DB: SELECT ...
+    DB-->>M: linha
+    M-->>S: objeto User
+    S-->>C: User (+ URL pré-assinada do avatar)
+    C-->>B: 200 UserRead (schema Pydantic = View)
+```
+
+---
+
+## 3. Registro de decisões (resumo)
+
+| Tema | Decisão | Alternativas consideradas | Motivo |
+|---|---|---|---|
+| Repositório | Monorepo (`backend/`, `frontend/`, `infra/`, `docs/`) | Um repo por parte | Um único lugar para o professor avaliar; issues e PRs centralizados |
+| Backend | FastAPI (Python 3.12) | Django, Flask | Pedido da equipe; tipagem, OpenAPI automático, ótimo suporte a testes |
+| Arquitetura do código | MVC + Service (View–Controller–Service–Model) | Clean Architecture completa | Pedido da equipe; separa regra de negócio sem burocracia excessiva |
+| Banco | **RDS PostgreSQL** + SQLAlchemy 2 + Alembic | DynamoDB, SQLite | Dados relacionais com unicidade (email/username); SQLAlchemy permite SQLite nos testes; RDS exige subnets privadas, SG e route tables → exercita os itens da especificação (ver ADR-001) |
+| Autenticação | JWT HS256 via PyJWT, expiração 60 min, sem refresh token | Sessão com cookie, OAuth externo | Pedido da equipe; stateless; simples de demonstrar |
+| Logout | Revogação no servidor (lista de `jti` revogados) | Apenas apagar token no cliente | Mostra logout "de verdade" na apresentação; custo baixo |
+| Hash de senha | Argon2id via `pwdlib` | bcrypt via passlib | `passlib` está sem manutenção; `pwdlib` é o recomendado pela documentação atual do FastAPI |
+| Imagem de perfil | S3 privado + URL pré-assinada | Bucket público, salvar no disco da EC2 | Segurança (nada público) e desacoplamento da instância |
+| Credenciais AWS na EC2 | IAM Role (instance profile) | Access keys no `.env` | Nunca existem chaves em arquivo; prática recomendada pela AWS |
+| Segredos da aplicação | SSM Parameter Store (SecureString) | Secrets Manager, `.env` commitado | Parameter Store padrão é gratuito; Secrets Manager é pago |
+| Frontend | React + TypeScript + Vite | CRA, Next.js | CRA está descontinuado; Next.js é desnecessário para uma SPA simples |
+| Deploy | Docker Compose em 1 EC2: Nginx (React build + proxy) + API | React no S3, systemd | Mesma origem (sem CORS), simples de explicar e reproduzir |
+| Infra como código | Reports `.md` + scripts AWS CLI | Terraform, só console | Equilíbrio entre aprendizado do console e reprodutibilidade |
+| Região | `us-east-2` (Ohio) | — | **Imposta pela AWS**: na nova experiência a região é atribuída pelo país do cadastro (Brasil → Ohio) e não pode ser trocada (ADR-008) |
+| Acesso à EC2 | SSM Session Manager pelo botão "Conectar" do console (porta 22 fechada) | SSH com chave | Sem porta aberta e sem chave compartilhada; cada acesso fica registrado no CloudTrail |
+| Acesso humano à AWS | Membros convidados pela página **Equipe** do AWS Settings, cada um com seu AWS Builder ID | IAM users com senha de console (não existe mais nesta conta) | É o modelo da nova experiência: sem IAM users, sem senhas para distribuir (ADR-006) |
+| Onde rodar AWS CLI | **AWS CloudShell** (terminal no navegador, já autenticado) | AWS CLI local com access keys | Ninguém instala nada nem cria access keys; nenhuma chave pode vazar |
+| Visibilidade do repositório | Público | Privado | A EC2 clona sem credenciais; por design não há segredos no repo (ADR-007) |
+
+---
+
+## 4. Estrutura do repositório
+
+```
+.
+├── README.md                     # visão geral, como rodar local, como fazer deploy, equipe
+├── CONTRIBUTING.md               # fluxo git, padrão de commits, como abrir PR
+├── .gitattributes                # finais de linha LF (scripts .sh funcionam vindos do Windows)
+├── docs/
+│   ├── ARQUITETURA.md            # este documento
+│   ├── checklist_validacao.md    # testes manuais em produção
+│   ├── aws/
+│   │   ├── TEMPLATE_report.md
+│   │   ├── report_00_conta_equipe_custos.md
+│   │   ├── report_01_vpc_rede.md
+│   │   ├── report_02_security_groups.md
+│   │   ├── report_03_s3_iam_role.md
+│   │   ├── report_04_rds.md
+│   │   ├── report_05_ssm_parameters.md
+│   │   ├── report_06_ec2_elastic_ip.md
+│   │   ├── report_07_deploy.md
+│   │   ├── report_08_teardown.md
+│   │   └── img/                  # prints do console (nomeados report_XX_descricao.png)
+│   └── apresentacao/             # slides, roteiro da demo, tabela de contribuições
+├── backend/
+│   ├── app/
+│   │   ├── main.py               # cria o app, registra routers e handlers de erro
+│   │   ├── core/
+│   │   │   ├── config.py         # Settings (pydantic-settings)
+│   │   │   ├── database.py       # engine, SessionLocal, Base
+│   │   │   ├── security.py       # hash de senha e JWT (funções puras)
+│   │   │   └── exceptions.py     # exceções de domínio
+│   │   ├── models/               # MODEL: entidades SQLAlchemy
+│   │   │   ├── user.py
+│   │   │   └── revoked_token.py
+│   │   ├── schemas/              # VIEW: contratos de entrada/saída (Pydantic)
+│   │   │   ├── auth.py
+│   │   │   └── user.py
+│   │   ├── services/             # SERVICE: regras de negócio
+│   │   │   ├── auth_service.py
+│   │   │   ├── user_service.py
+│   │   │   └── storage/
+│   │   │       ├── base.py       # interface StorageService
+│   │   │       ├── local.py      # salva em disco (dev)
+│   │   │       └── s3.py         # boto3 (produção)
+│   │   ├── controllers/          # CONTROLLER: routers FastAPI (finos)
+│   │   │   ├── auth_controller.py
+│   │   │   ├── user_controller.py
+│   │   │   └── health_controller.py
+│   │   └── dependencies.py       # get_db, get_current_user, get_storage
+│   ├── alembic/                  # migrações
+│   ├── alembic.ini
+│   ├── tests/
+│   │   ├── conftest.py
+│   │   ├── unit/
+│   │   └── integration/
+│   ├── Dockerfile
+│   ├── entrypoint.sh             # roda `alembic upgrade head` e sobe o uvicorn
+│   ├── pyproject.toml
+│   ├── README.md                 # como rodar/testar o backend (seção 10.3)
+│   └── .env.example
+├── frontend/
+│   ├── src/                      # ver seção 7
+│   ├── Dockerfile                # build multi-stage → Nginx
+│   ├── nginx.conf
+│   ├── package.json
+│   ├── README.md                 # como rodar/testar o frontend (seção 10.3)
+│   └── .env.example
+├── infra/
+│   ├── scripts/
+│   │   ├── 00_env.sh             # variáveis comuns (região, prefixo, CIDRs, tags)
+│   │   ├── 01_vpc.sh
+│   │   ├── 02_security_groups.sh
+│   │   ├── 03_s3_iam_role.sh
+│   │   ├── 04_rds.sh
+│   │   ├── 05_ssm_parameters.sh
+│   │   ├── 06_ec2.sh
+│   │   ├── 99_teardown.sh
+│   │   └── lib.sh                # funções auxiliares (log, buscar ID por tag)
+│   ├── ec2/
+│   │   ├── user-data.sh          # bootstrap da instância
+│   │   └── load-env.sh           # lê SSM Parameter Store → gera .env
+│   └── policies/
+│       ├── ec2-trust-policy.json
+│       └── ec2-app-policy.json   # acesso ao bucket + leitura dos parâmetros
+├── docker-compose.yml            # desenvolvimento local (inclui postgres)
+├── docker-compose.prod.yml       # produção na EC2 (sem postgres, usa RDS)
+├── deploy.sh                     # executado na EC2: git pull + build + up
+├── .github/
+│   ├── workflows/ci.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── feature.md
+│   │   ├── aws_report.md
+│   │   └── bug.md
+│   └── pull_request_template.md
+├── .gitignore
+└── .editorconfig
+```
+
+---
+
+## 5. Backend
+
+### 5.1 Stack
+
+| Item | Escolha |
+|---|---|
+| Linguagem | Python 3.12 |
+| Framework | FastAPI + Uvicorn |
+| ORM / migrações | SQLAlchemy 2.x (estilo `Mapped[]`) + Alembic |
+| Driver PostgreSQL | `psycopg[binary]` (psycopg 3) |
+| Validação / config | Pydantic v2, `pydantic-settings`, `email-validator` |
+| Senha | `pwdlib[argon2]` |
+| JWT | `PyJWT` |
+| AWS | `boto3` |
+| Upload | `python-multipart` |
+| Testes | `pytest`, `pytest-cov`, `httpx` (via `TestClient`), `moto[s3]` |
+| Qualidade | `ruff` (lint + format) |
+| Gerenciador | `uv` (com `pyproject.toml`); `pip install -e .[dev]` também deve funcionar |
+
+### 5.2 Camadas e responsabilidades
+
+A API não renderiza HTML; por isso a **View** do backend é a camada de **schemas Pydantic** (o que entra e o que sai da API), e a interface visual é o frontend React.
+
+| Camada | Pasta | Pode | Não pode |
+|---|---|---|---|
+| **View** | `schemas/` | Definir formato e validação de entrada/saída (tamanhos, regex, `EmailStr`), serializar respostas | Acessar banco, conter regra de negócio |
+| **Controller** | `controllers/` | Declarar rota, receber dependências (`db`, `current_user`, `storage`), chamar **um** método de service, devolver schema e status HTTP | Fazer query, fazer hash, chamar boto3, ter `if` de regra de negócio. Meta: cada handler com ≤ 10 linhas |
+| **Service** | `services/` | Regras de negócio (unicidade, troca de senha, revogação, upload), orquestrar models e storage, lançar exceções de domínio | Importar `fastapi`, conhecer `Request`/`HTTPException`/status HTTP |
+| **Model** | `models/` | Entidades SQLAlchemy, colunas, constraints, relacionamentos | Regra de negócio, chamadas externas |
+| Core | `core/` | Config, conexão com banco, funções puras de segurança, exceções | Depender de controllers/services |
+
+**Regras de dependência:** `controllers → services → models`; `services → core`; `schemas` são usados por controllers (e podem ser recebidos por services como DTO). Nunca no sentido contrário.
+
+**Acesso a dados:** não haverá camada Repository separada; os services usam a `Session` do SQLAlchemy diretamente (o protótipo é pequeno). Se um service crescer demais, extrair queries para `models/` como métodos de classe.
+
+**Exceções de domínio → HTTP:** services lançam exceções de `core/exceptions.py`; um handler global em `main.py` converte:
+
+| Exceção | HTTP |
+|---|---|
+| `EmailAlreadyExistsError`, `UsernameAlreadyExistsError` | 409 |
+| `InvalidCredentialsError` | 401 |
+| `InvalidTokenError` | 401 |
+| `WrongPasswordError` (senha atual incorreta) | 400 |
+| `InvalidImageError` (tipo/tamanho) | 422 |
+| `NotFoundError` | 404 |
+
+Formato padrão de erro: `{"detail": "mensagem legível", "code": "EMAIL_ALREADY_EXISTS"}`.
+
+### 5.3 Exemplo do padrão (referência para implementação)
+
+```python
+# controllers/user_controller.py — fino
+@router.put("/me/password", status_code=204)
+def change_password(
+    payload: PasswordChange,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user_service.change_password(db, current_user, payload.current_password, payload.new_password)
+
+# services/user_service.py — regra de negócio
+def change_password(db: Session, user: User, current: str, new: str) -> None:
+    if not security.verify_password(current, user.hashed_password):
+        raise WrongPasswordError()
+    user.hashed_password = security.hash_password(new)
+    db.commit()
+```
+
+### 5.4 Modelo de dados
+
+**Tabela `users`**
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `id` | UUID (`sqlalchemy.Uuid`) | PK, gerado na aplicação (`uuid4`) |
+| `full_name` | `String(120)` | obrigatório |
+| `username` | `String(30)` | obrigatório, **único**, indexado, salvo em minúsculas, regex `^[a-z0-9_.]{3,30}$` |
+| `email` | `String(254)` | obrigatório, **único**, indexado, salvo em minúsculas |
+| `hashed_password` | `String(255)` | obrigatório; **nunca** retornado pela API |
+| `profile_image_key` | `String(512)` | opcional; chave do objeto no S3 (não a URL) |
+| `description` | `String(500)` | opcional |
+| `is_active` | `Boolean` | default `true` |
+| `created_at` | `DateTime(timezone=True)` | default `now()` UTC; imutável |
+| `updated_at` | `DateTime(timezone=True)` | atualizado a cada alteração |
+
+**Tabela `revoked_tokens`**
+
+| Coluna | Tipo | Regras |
+|---|---|---|
+| `jti` | `String(36)` | PK |
+| `user_id` | UUID | FK → `users.id` |
+| `expires_at` | `DateTime(timezone=True)` | expiração original do token (permite limpeza periódica) |
+| `revoked_at` | `DateTime(timezone=True)` | default `now()` |
+
+Usar apenas tipos genéricos do SQLAlchemy (sem recursos exclusivos do PostgreSQL) para que os testes rodem em SQLite.
+
+### 5.5 Endpoints
+
+Prefixo global: `/api`. Documentação automática em `/api/docs` (Swagger) e `/api/openapi.json`.
+
+| Método | Rota | Auth | Entrada | Saída | Códigos |
+|---|---|---|---|---|---|
+| GET | `/api/health` | não | — | `{"status":"ok","db":"ok"}` | 200, 503 |
+| POST | `/api/auth/register` | não | `UserCreate` (JSON) | `UserRead` | 201, 409, 422 |
+| POST | `/api/auth/login` | não | form `username` + `password` (OAuth2PasswordRequestForm; aceita username **ou** email) | `Token` | 200, 401 |
+| POST | `/api/auth/logout` | sim | — | — | 204, 401 |
+| GET | `/api/users/me` | sim | — | `UserRead` | 200, 401 |
+| PATCH | `/api/users/me` | sim | `UserUpdate` (parcial) | `UserRead` | 200, 409, 422 |
+| PUT | `/api/users/me/password` | sim | `PasswordChange` | — | 204, 400, 422 |
+| POST | `/api/users/me/avatar` | sim | multipart `file` | `UserRead` | 200, 422 |
+| DELETE | `/api/users/me/avatar` | sim | — | `UserRead` | 200 |
+
+**Schemas (View):**
+
+- `UserCreate`: `full_name`, `username`, `email`, `password` (mín. 8 caracteres, ao menos 1 letra e 1 número), `description?`
+- `UserUpdate`: todos opcionais: `full_name`, `username`, `email`, `description` (senha e imagem têm rotas próprias)
+- `UserRead`: `id`, `full_name`, `username`, `email`, `description`, `profile_image_url` (URL pré-assinada ou `null`), `created_at`
+- `Token`: `access_token`, `token_type="bearer"`, `expires_in` (segundos)
+- `PasswordChange`: `current_password`, `new_password` (mesmas regras de força; diferente da atual)
+
+### 5.6 Autenticação e autorização
+
+- **Hash:** `pwdlib` com Argon2id (`PasswordHash.recommended()`). Funções `hash_password` e `verify_password` em `core/security.py`.
+- **JWT:** HS256, segredo `JWT_SECRET` (mín. 32 bytes aleatórios, vindo do Parameter Store em produção). Claims: `sub` (id do usuário), `jti` (uuid4), `iat`, `exp` (60 min). Sem refresh token no protótipo.
+- **`get_current_user`** (em `dependencies.py`): extrai o Bearer token (`OAuth2PasswordBearer(tokenUrl="/api/auth/login")`), decodifica, rejeita se expirado, se o `jti` estiver em `revoked_tokens` ou se o usuário não existir/estiver inativo → 401 com header `WWW-Authenticate: Bearer`.
+- **Logout:** insere o `jti` em `revoked_tokens`. O frontend também apaga o token local.
+- **Autorização:** todas as rotas `/api/users/me*` operam somente sobre o usuário do token. Não há papéis (admin) no protótipo.
+- **Mensagens de erro de login** genéricas ("usuário ou senha inválidos"), sem revelar se o usuário existe.
+
+### 5.7 Armazenamento de imagens
+
+- Interface `StorageService` com `upload(file_bytes, content_type, key) -> None`, `delete(key) -> None`, `get_url(key) -> str`.
+- `LocalStorageService` (dev/testes): grava em `backend/media/` e serve via `StaticFiles` em `/api/media`.
+- `S3StorageService` (produção): `boto3` usando credenciais da IAM Role da EC2 (nunca access keys). `get_url` gera **URL pré-assinada** de GET (validade 1 h).
+- Seleção por `STORAGE_BACKEND=local|s3`.
+- Regras (no `user_service`): tipos aceitos `image/jpeg`, `image/png`, `image/webp`; tamanho máx. 2 MB; validar a assinatura real do arquivo (magic bytes), não só o `content_type`; chave `avatars/{user_id}/{uuid4}.{ext}`; ao trocar a imagem, apagar a anterior.
+
+### 5.8 Configuração (variáveis de ambiente)
+
+| Variável | Exemplo (dev) | Produção |
+|---|---|---|
+| `ENVIRONMENT` | `dev` | `prod` |
+| `DATABASE_URL` | `postgresql+psycopg://app:app@db:5432/app` | endpoint do RDS (SSM) |
+| `JWT_SECRET` | `troque-me-...` | SSM SecureString |
+| `JWT_EXPIRE_MINUTES` | `60` | `60` |
+| `STORAGE_BACKEND` | `local` | `s3` |
+| `S3_BUCKET` | — | `proto1-avatars-<sufixo>` |
+| `AWS_REGION` | `us-east-2` | `us-east-2` |
+| `CORS_ORIGINS` | `http://localhost:5173` | vazio (mesma origem) |
+| `LOG_LEVEL` | `DEBUG` | `INFO` |
+
+`.env` **nunca** é commitado; `.env.example` sim. Em produção o `.env` é gerado na EC2 por `infra/ec2/load-env.sh` a partir do Parameter Store.
+
+### 5.9 Outros padrões
+
+- Migrações: toda mudança de modelo gera migração Alembic (`alembic revision --autogenerate -m "..."`), revisada à mão. O container roda `alembic upgrade head` ao iniciar.
+- Logs: módulo `logging` em formato texto simples, nível pela env. Nunca logar senha, token ou hash.
+- Datas sempre em UTC no banco; o frontend formata para `America/Fortaleza`.
+- Estilo: `ruff check` e `ruff format` sem erros (o CI bloqueia).
+
+---
+
+## 6. Estratégia de testes (TDD simplificado)
+
+### 6.1 Ciclo obrigatório por funcionalidade
+
+1. **Red:** escrever os testes da funcionalidade (caminho feliz + erros previstos nos critérios de aceite da issue). Rodar e ver falhar. Commit: `test(auth): adiciona testes do endpoint de registro`.
+2. **Green:** implementar o mínimo para passar. Commit: `feat(auth): implementa registro de usuário`.
+3. **Refactor:** melhorar o código com os testes verdes. Commit: `refactor(auth): extrai validação de unicidade`.
+
+Essa sequência de commits fica visível no histórico (por isso o merge **não** pode ser squash — seção 11) e serve como evidência do processo na apresentação.
+
+### 6.2 O que testar em cada camada
+
+| Camada | Tipo | Como |
+|---|---|---|
+| `core/security.py` | Unitário | hash ≠ senha; verify verdadeiro/falso; token válido decodifica; token expirado/adulterado falha |
+| `services/` | Unitário com banco | SQLite em memória; regras de negócio e exceções de domínio |
+| `services/storage/s3.py` | Unitário | `moto` (`mock_aws`) simulando o S3 |
+| `controllers/` | Integração | `TestClient` + override de `get_db` e `get_storage`; status HTTP, formato da resposta, autenticação |
+| Fluxo completo | Integração | registrar → login → `/me` → editar → trocar senha → logout → token rejeitado |
+
+### 6.3 Infraestrutura de testes
+
+- `conftest.py` com fixtures: `engine` (SQLite `sqlite+pysqlite:///:memory:` com `StaticPool`), `db_session` (rollback a cada teste), `client` (TestClient com overrides), `user_factory`, `auth_headers` (usuário logado), `storage` (`LocalStorageService` em diretório temporário).
+- Nomes: `test_<acao>_<cenario>_<resultado esperado>`, ex.: `test_register_with_existing_email_returns_409`.
+- Cobertura mínima: **70%** no backend (`pytest --cov=app --cov-fail-under=70`) — reduzida de 80% por causa do prazo.
+- Frontend: Vitest + React Testing Library, escopo mínimo da seção 7.7.
+- Testes que dependem de usuário autenticado usam a fixture `auth_user` + `app.dependency_overrides[get_current_user]` enquanto o login não estiver pronto; depois passam a usar `auth_headers` (token real).
+- CI (`.github/workflows/ci.yml`) roda lint + testes do backend e lint + testes + build do frontend em todo PR. PR com CI vermelho não é mergeado.
+
+---
+
+## 7. Frontend
+
+### 7.1 Stack
+
+| Item | Escolha | Por quê |
+|---|---|---|
+| Base | React 19 + TypeScript + Vite | Padrão atual; TypeScript pega erros cedo |
+| Rotas | React Router v7 (modo biblioteca) | Rotas públicas/protegidas |
+| HTTP | Axios com instância única e interceptors | Injeta o token e trata 401 em um só lugar |
+| Formulários | React Hook Form + Zod | Validação declarativa espelhando as regras do backend |
+| Estilo | Tailwind CSS v4 | Produtivo para quem não domina CSS; consistente |
+| Notificações | `sonner` (toasts) | Feedback de sucesso/erro |
+| Testes | Vitest + React Testing Library | Integração nativa com Vite |
+| Qualidade | ESLint + Prettier | CI bloqueia erros |
+
+### 7.2 Estrutura
+
+```
+frontend/src/
+├── main.tsx
+├── App.tsx                    # providers + router
+├── routes/
+│   ├── router.tsx             # definição das rotas
+│   ├── ProtectedRoute.tsx     # redireciona para /login se não autenticado
+│   └── PublicOnlyRoute.tsx    # redireciona para /dashboard se já logado
+├── pages/
+│   ├── LoginPage.tsx
+│   ├── RegisterPage.tsx
+│   ├── DashboardHomePage.tsx
+│   ├── ProfilePage.tsx
+│   ├── ChangePasswordPage.tsx
+│   └── NotFoundPage.tsx
+├── layouts/
+│   └── DashboardLayout.tsx    # sidebar + topbar + <Outlet/>
+├── components/
+│   ├── ui/                    # Button, Input, Card, Spinner, Avatar
+│   └── forms/FormField.tsx
+├── contexts/
+│   └── AuthContext.tsx        # user, token, login(), logout(), refreshUser()
+├── hooks/
+│   └── useAuth.ts
+├── services/
+│   ├── api.ts                 # axios instance + interceptors
+│   ├── authService.ts         # register, login, logout
+│   └── userService.ts         # getMe, updateMe, changePassword, uploadAvatar
+├── schemas/                   # schemas Zod dos formulários
+├── types/
+│   └── user.ts                # tipos espelhando os schemas da API
+└── utils/
+    └── formatDate.ts
+```
+
+### 7.3 Rotas
+
+| Rota | Acesso | Página |
+|---|---|---|
+| `/login` | só deslogado | Login (username ou email + senha) |
+| `/register` | só deslogado | Cadastro |
+| `/dashboard` | protegida | Início: card de boas-vindas com avatar, nome, "membro desde" |
+| `/dashboard/profile` | protegida | Ver/editar dados + trocar imagem |
+| `/dashboard/password` | protegida | Alterar senha |
+| `/` | — | redireciona para `/dashboard` ou `/login` |
+| `*` | — | 404 |
+
+Menu lateral do dashboard: **Início**, **Meu perfil**, **Alterar senha**, **Sair**.
+
+### 7.4 Fluxo de autenticação no cliente
+
+1. Login chama `POST /api/auth/login` → recebe `access_token`.
+2. Token salvo em `localStorage` (chave `proto1.token`) e no estado do `AuthContext`; em seguida `GET /api/users/me` carrega o usuário.
+3. Interceptor de requisição adiciona `Authorization: Bearer <token>`.
+4. Interceptor de resposta: em **401**, limpa o token, zera o contexto e redireciona para `/login` com toast "Sessão expirada".
+5. Ao abrir a aplicação, se existir token, chama `/me` para validar antes de renderizar rotas protegidas (mostrar spinner enquanto isso).
+6. Logout chama `POST /api/auth/logout`, depois limpa tudo localmente (mesmo se a chamada falhar).
+
+> Trade-off registrado: `localStorage` é vulnerável a XSS. Mitigações: React escapa conteúdo por padrão, proibido usar `dangerouslySetInnerHTML`, token curto (60 min). Cookie `httpOnly` fica como evolução futura.
+
+### 7.5 Comunicação com a API
+
+- `baseURL` = `/api` (mesma origem). Em dev, o `vite.config.ts` faz proxy de `/api` para `http://localhost:8000`, então não há CORS nem URLs diferentes por ambiente.
+- Login usa `application/x-www-form-urlencoded` (exigência do `OAuth2PasswordRequestForm`); upload usa `multipart/form-data`; o resto JSON.
+- Erros da API exibem `detail` no toast ou embaixo do campo correspondente (409 de email → erro no campo email).
+
+### 7.6 Boas práticas a seguir
+
+- Componentes pequenos e de função única; páginas compõem componentes.
+- Nenhuma chamada HTTP dentro de componentes de UI: sempre via `services/`.
+- Estados de **carregando**, **erro** e **vazio** tratados em toda tela que busca dados.
+- Botões de submit desabilitados durante o envio (evita duplo clique).
+- Acessibilidade básica: `label` associado a cada input, `alt` na imagem, foco visível, navegação por teclado.
+- Layout responsivo (sidebar vira menu no celular).
+- Preview da imagem antes do upload; validação de tipo e tamanho (2 MB) também no cliente.
+- Sem segredos no frontend; variáveis `VITE_*` são públicas.
+
+### 7.7 Testes do frontend (mínimo, por causa do prazo)
+
+Obrigatórios (3 arquivos):
+
+- `ProtectedRoute.test.tsx`: redireciona sem usuário; renderiza com usuário.
+- `LoginPage.test.tsx`: erros de validação; chama o service com os dados certos; mostra erro em 401.
+- `RegisterPage.test.tsx`: senhas diferentes bloqueiam o envio; erro 409 aparece no campo.
+
+Desejáveis (se sobrar tempo): `AuthContext`, página de perfil, página de senha.
+
+---
+
+## 8. Infraestrutura AWS
+
+### 8.1 Convenções
+
+- **Região:** `us-east-2` (Ohio), atribuída automaticamente pela AWS (ADR-008). **AZs:** `us-east-2a` e `us-east-2b`. Confirmar em AWS Settings → Projeto → Visão geral → Informações adicionais → Região; se aparecer outra, trocar em `infra/scripts/00_env.sh` e nesta seção.
+- **Tipo de conta:** criada pela **nova experiência da AWS** ("Sign up for AWS (new)"), no plano gratuito. Todos os serviços usados neste projeto (EC2, VPC, RDS, S3, Systems Manager, IAM, CloudShell, Budgets, CloudTrail) estão na lista de serviços suportados do plano gratuito.
+- **Prefixo de nomes:** `proto1-` (ex.: `proto1-vpc`, `proto1-sg-web`).
+- **Tags obrigatórias em todo recurso:** `Project=proto1` e `Owner=<membro responsável>`.
+- Ninguém usa o usuário **root** no dia a dia (seção 8.8).
+
+### 8.2 Rede (VPC)
+
+| Recurso | Nome | Valor |
+|---|---|---|
+| VPC | `proto1-vpc` | `10.0.0.0/16`, DNS hostnames e DNS resolution habilitados |
+| Subnet pública A | `proto1-public-a` | `10.0.1.0/24` — `us-east-2a` — auto-assign public IP **desligado** (usamos Elastic IP) |
+| Subnet pública B | `proto1-public-b` | `10.0.2.0/24` — `us-east-2b` (reserva para evolução: ALB/2ª instância) |
+| Subnet privada A | `proto1-private-a` | `10.0.11.0/24` — `us-east-2a` |
+| Subnet privada B | `proto1-private-b` | `10.0.12.0/24` — `us-east-2b` |
+| Internet Gateway | `proto1-igw` | anexado à VPC |
+| VPC Endpoint | `proto1-s3-endpoint` | Gateway endpoint `com.amazonaws.us-east-2.s3`, associado às duas route tables |
+
+> O RDS exige um *DB subnet group* com subnets em **pelo menos 2 AZs**, por isso existem duas subnets privadas.
+> **Sem NAT Gateway** (custo fixo por hora + tráfego). A subnet privada não precisa sair para a internet: o RDS é gerenciado e o acesso ao S3 é pelo endpoint.
+
+### 8.3 Tabelas de rotas
+
+| Tabela | Associada a | Rotas |
+|---|---|---|
+| `proto1-rt-public` | `proto1-public-a`, `proto1-public-b` | `10.0.0.0/16 → local`; `0.0.0.0/0 → proto1-igw`; prefix list do S3 → endpoint |
+| `proto1-rt-private` | `proto1-private-a`, `proto1-private-b` | `10.0.0.0/16 → local`; prefix list do S3 → endpoint |
+
+A tabela principal (main) da VPC fica sem associação explícita e sem rota para a internet (subnet nova sem associação nunca fica pública por acidente).
+
+### 8.4 Security Groups
+
+**`proto1-sg-web`** (EC2)
+
+| Direção | Protocolo/porta | Origem/destino | Motivo |
+|---|---|---|---|
+| Entrada | TCP 80 | `0.0.0.0/0` | HTTP da aplicação |
+| Entrada | TCP 443 | `0.0.0.0/0` | HTTPS (só se a evolução HTTPS for feita) |
+| Saída | Todos | `0.0.0.0/0` | atualizações, Docker Hub, GitHub, SSM, S3 |
+
+Sem porta 22: o acesso administrativo é feito pelo **SSM Session Manager**. (Se a equipe precisar de SSH em algum momento, liberar 22 apenas para o IP `/32` de quem for usar, temporariamente, e registrar no report.)
+
+**`proto1-sg-db`** (RDS)
+
+| Direção | Protocolo/porta | Origem | Motivo |
+|---|---|---|---|
+| Entrada | TCP 5432 | **`proto1-sg-web`** (referência ao SG, não a IP) | Só a EC2 fala com o banco |
+| Saída | — | padrão | — |
+
+### 8.5 EC2
+
+| Item | Valor |
+|---|---|
+| Nome | `proto1-app` |
+| AMI | Amazon Linux 2023 (x86_64) |
+| Tipo | `t3.micro` (elegível ao free tier) |
+| Subnet | `proto1-public-a` |
+| SG | `proto1-sg-web` |
+| Disco | 20 GB gp3, criptografado |
+| IAM instance profile | `proto1-ec2-role` (seção 8.8) |
+| IMDS | v2 obrigatório (`HttpTokens=required`) |
+| User data | `infra/ec2/user-data.sh`: atualiza pacotes, instala Docker + plugin Compose + git, cria **swap de 2 GB** (1 GB de RAM não basta para o build do React), habilita o Docker, clona o repositório em `/opt/proto1` |
+| IP público | **Elastic IP** `proto1-eip` associado à instância (fixo mesmo após stop/start) |
+
+### 8.6 RDS PostgreSQL
+
+| Item | Valor |
+|---|---|
+| Identificador | `proto1-db` |
+| Engine | PostgreSQL 16 (ou a versão estável mais recente oferecida) |
+| Classe | `db.t4g.micro` (ou `db.t3.micro`) |
+| Armazenamento | 20 GB gp3, criptografado, **autoscaling desligado** |
+| Multi-AZ | **Não** |
+| DB subnet group | `proto1-db-subnets` (private-a + private-b) |
+| Acesso público | **Não** |
+| SG | `proto1-sg-db` |
+| Banco inicial / usuário | `proto1` / `proto1_admin` |
+| Senha | gerada aleatoriamente pelo script e salva direto no Parameter Store (nunca em arquivo commitado) |
+| Backup automático | 1 dia de retenção |
+| Proteção contra exclusão | desligada (facilita o teardown) |
+
+Para administrar o banco: abrir sessão na EC2 via Session Manager e rodar `docker run --rm -it postgres:16 psql "<DATABASE_URL>"`, ou usar port forwarding do Session Manager para a máquina local.
+
+### 8.7 S3
+
+| Item | Valor |
+|---|---|
+| Bucket | `proto1-avatars-<sufixo-único>` (nomes de bucket são globais) |
+| Block Public Access | **todos ligados** |
+| Object Ownership | Bucket owner enforced (ACLs desabilitadas) |
+| Criptografia | SSE-S3 (padrão) |
+| Versionamento | desligado |
+| Acesso | somente pela role da EC2; leitura no navegador via URL pré-assinada |
+| CORS | não necessário (upload passa pela API) |
+
+### 8.8 IAM
+
+A conta usa a **nova experiência da AWS**, em que as pessoas **não** são IAM users. Nela, IAM users só servem para acesso programático (não têm senha de console). O acesso humano é feito pela página **Equipe** do AWS Settings (`https://settings.aws.com/team`). Ficam então duas coisas: o acesso das pessoas (pela Equipe) e a role da EC2 (no IAM).
+
+**Pessoas — como funciona a Equipe:**
+
+| Item | Como é |
+|---|---|
+| Proprietário | Victor (dono da conta). Único que vê faturamento, créditos e limites de gasto, e único que convida ou remove membros |
+| Projeto | `proto1`. Um projeto da nova experiência é uma conta AWS gerenciada pela AWS; todos os recursos ficam nele |
+| Convite | Settings → **Equipe** → *Convidar um novo membro* → email + projeto `proto1`. O membro tem **14 dias** para aceitar (pedir para olhar o spam) |
+| Login dos membros | Cada membro cria o próprio **AWS Builder ID** (pode entrar com email, Google, GitHub ou Apple) e ativa MFA nele |
+| Permissões dos membros | **Administrador do projeto**, definido pela AWS e sem como restringir: criam, editam e apagam qualquer recurso; **não** veem faturamento nem convidam pessoas |
+| IAM users e access keys | **Nenhum.** A AWS CLI roda no **CloudShell** (ícone `>_` no console), que já vem autenticado. Para usar a CLI no próprio computador, o comando `aws login` gera credenciais temporárias de 12 h |
+| "Recursos avançados" | **Não ativar.** A ativação é irreversível, remove os limites de gasto e muda o modelo da conta |
+
+Por que isso continua sendo boa prática: cada pessoa tem identidade própria com MFA, o CloudTrail registra quem fez o quê (seção 8.10), não há senha compartilhada nem credencial de longo prazo e o faturamento fica restrito ao proprietário. Todos serem administradores do projeto é imposição do modelo da AWS. A regra da equipe compensa isso: cada um só mexe nos recursos da própria frente (tag `Owner`).
+
+**Aplicação — role da EC2** `proto1-ec2-role` (instance profile de mesmo nome):
+
+| Item | Configuração |
+|---|---|
+| Quem pode assumir (trust) | `ec2.amazonaws.com` (`infra/policies/ec2-trust-policy.json`) |
+| Policy gerenciada | `AmazonSSMManagedInstanceCore` (permite o Session Manager) |
+| Policy inline `proto1-ec2-app` | Só as duas permissões que a aplicação usa (`infra/policies/ec2-app-policy.json`, abaixo) |
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AvatarsNoBucket",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::proto1-avatars-SUFIXO/avatars/*"
+    },
+    {
+      "Sid": "LerSegredosDaAplicacao",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParametersByPath", "ssm:GetParameter"],
+      "Resource": "arn:aws:ssm:us-east-2:ACCOUNT_ID:parameter/proto1/*"
+    }
+  ]
+}
+```
+
+A nova experiência tem o *IAM role manager*, que cria roles automaticamente para alguns serviços. Para a EC2, usamos a nossa role, escolhida explicitamente no lançamento: se o console sugerir uma role automática, selecionar `proto1-ec2-role`.
+
+Não é preciso permissão de KMS: SecureStrings criptografadas com a chave padrão da AWS (`aws/ssm`) são decifradas por quem tem permissão de leitura no parâmetro.
+
+### 8.9 Segredos — SSM Parameter Store
+
+| Parâmetro | Tipo |
+|---|---|
+| `/proto1/prod/DATABASE_URL` | SecureString |
+| `/proto1/prod/JWT_SECRET` | SecureString |
+| `/proto1/prod/S3_BUCKET` | String |
+| `/proto1/prod/STORAGE_BACKEND` | String (`s3`) |
+| `/proto1/prod/AWS_REGION` | String |
+
+`infra/ec2/load-env.sh` lê `/proto1/prod/` com `aws ssm get-parameters-by-path --with-decryption` e escreve `/opt/proto1/.env` (permissão `600`).
+
+### 8.10 Auditoria e evidência de contribuição na AWS
+
+- Cada integrante opera com o **próprio login (Builder ID)**. O **CloudTrail Event history** já vem ligado (gratuito, 90 dias, nada a configurar). Na nova experiência, cada evento traz um campo `onBehalfOf` com o `userId` de quem agiu. Para descobrir o nome por trás do ID, rodar no CloudShell:
+
+  ```bash
+  aws sso-admin list-instances --region us-east-1   # anota o IdentityStoreId
+  aws identitystore describe-user --region us-east-1 \
+    --identity-store-id <IdentityStoreId> --user-id <userId>   # mostra nome e email
+  ```
+
+  (O exemplo da documentação da AWS usa `--region us-east-1` nesses dois comandos; se der erro, trocar por `us-east-2`.) Um print de um evento com o nome resolvido entra no report como evidência.
+- Tag `Owner` em cada recurso indica o responsável.
+- Cada report é commitado por quem fez o trabalho → o GitHub registra a autoria.
+
+---
+
+## 9. Deploy
+
+### 9.1 Containers
+
+**`docker-compose.yml` (dev local):** `db` (postgres:16), `api` (build `backend/`, hot reload, porta 8000), `web` opcional (em dev o normal é `npm run dev` com o proxy do Vite).
+
+**`docker-compose.prod.yml` (EC2):**
+
+| Serviço | Imagem | Portas | Observações |
+|---|---|---|---|
+| `api` | build `backend/` | interna 8000 | `env_file: .env`; `restart: unless-stopped`; healthcheck em `/api/health` |
+| `web` | build `frontend/` (multi-stage: `node` build → `nginx:alpine`) | **80:80** | serve `dist/`; `location /api/` → `proxy_pass http://api:8000`; `try_files $uri /index.html` para a SPA; `client_max_body_size 3m` |
+
+O backend roda `alembic upgrade head` no `entrypoint.sh` antes do Uvicorn.
+
+### 9.2 Passo a passo do deploy (resumo; detalhes no `report_07_deploy.md`)
+
+1. Infra criada pelos scripts `01` a `06` (ou console, documentado).
+2. Conectar na EC2: console → EC2 → selecionar `proto1-app` → **Conectar** → aba **Session Manager** → Conectar (abre um terminal no navegador).
+3. `cd /opt/proto1 && sudo ./infra/ec2/load-env.sh` (gera `.env`).
+4. `sudo ./deploy.sh` → `git pull` + `docker compose -f docker-compose.prod.yml up -d --build` + checagem `curl -f http://localhost/api/health`.
+5. Smoke test externo: abrir `http://<elastic-ip>/`, registrar, logar, editar perfil, subir imagem, logout.
+
+Atualizações seguintes: merge na `main` → repetir passos 2 e 4.
+
+### 9.3 Walking skeleton (dia 3)
+
+O primeiro deploy acontece com o esqueleto (API com `/api/health` + frontend com páginas placeholder), assim que EC2, RDS e Parameter Store existirem. Isso valida cedo rede, SG, role, segredos, Docker e Nginx — os pontos que mais costumam travar. A partir daí, o responsável pelo deploy atualiza a produção ao fim de cada dia com o que estiver na `main`.
+
+---
+
+## 10. Documentação do projeto
+
+A documentação é responsabilidade de **todos**, em **toda** issue, e é escrita **junto** com o trabalho (no mesmo PR), nunca deixada para o fim. Ela tem três camadas:
+
+| Camada | Responde | Onde |
+|---|---|---|
+| **O que foi feito e por quê** (por entrega) | O que mudou, por que, como testar, evidências | Descrição do PR (template abaixo) + mensagens de commit |
+| **Como funciona** (permanente) | Como o sistema/infra funciona e como usar | READMEs, docstrings, Swagger, reports AWS, ADRs |
+| **Como a equipe trabalhou** (processo) | Passos executados, dia a dia, quem fez o quê | Diário de bordo (seção 10.6) + issues/PRs |
+
+### 10.1 Definição de Pronto (DoD) — vale para todas as issues
+
+Uma issue só é fechada quando:
+
+- [ ] O trabalho está feito e os critérios de aceite da issue foram cumpridos.
+- [ ] Testes escritos e passando (issues de código) / verificação colada no report (issues AWS).
+- [ ] A documentação permanente foi atualizada no lugar certo (tabela da seção 10.2).
+- [ ] O PR tem o template preenchido, incluindo evidências.
+- [ ] Decisão nova ou mudança de decisão registrada como ADR (seção 15).
+- [ ] Nenhum segredo em código, docs ou prints.
+- [ ] Outro membro revisou e aprovou.
+
+**Template de PR** (`.github/pull_request_template.md`):
+
+```markdown
+Closes #<n>
+
+## O que foi feito
+<!-- 2 a 5 itens objetivos -->
+
+## Por quê / decisões
+<!-- escolhas feitas e alternativas descartadas; se for decisão de arquitetura, link para o ADR -->
+
+## Como testar
+<!-- comandos ou passos para o revisor reproduzir -->
+
+## Evidências
+<!-- saída dos testes, prints da tela ou do console AWS -->
+
+## Documentação atualizada
+- [ ] Docstrings / comentários onde a lógica não é óbvia
+- [ ] README do módulo (se mudou como rodar, estrutura ou variáveis)
+- [ ] `.env.example` e ARQUITETURA §5.8 (se criou variável)
+- [ ] Report AWS (se mexeu na AWS)
+- [ ] ADR (se tomou decisão de arquitetura)
+- [ ] Não se aplica
+```
+
+### 10.2 Onde documentar cada tipo de mudança
+
+| Mudança | Onde documentar |
+|---|---|
+| Endpoint novo ou alterado | `summary`, `description` e `responses` na rota (aparecem no Swagger `/api/docs`) + exemplos no schema Pydantic (`json_schema_extra`) |
+| Regra de negócio | Docstring do método no service |
+| Variável de ambiente | `.env.example` + tabela da seção 5.8 |
+| Como rodar, testar, estrutura de pastas do backend | `backend/README.md` |
+| Como rodar, testar, estrutura de pastas do frontend | `frontend/README.md` |
+| Componente, hook ou service do frontend não óbvio | Comentário JSDoc curto no topo |
+| Recurso AWS criado ou alterado | Report `docs/aws/report_XX_*.md` + script (seção 10.4) |
+| Decisão de arquitetura | ADR na seção 15 |
+| Visão geral, deploy, equipe | `README.md` da raiz |
+
+### 10.3 Documentação no código
+
+- **Idioma:** português nos docs e comentários; nomes de código em inglês.
+- **Docstrings** (estilo Google, curtas) são obrigatórias nos **services** e nas funções de `core/`. Exemplo:
+
+  ```python
+  def change_password(db: Session, user: User, current: str, new: str) -> None:
+      """Troca a senha do usuário após conferir a senha atual.
+
+      Raises:
+          WrongPasswordError: se `current` não confere com a senha salva.
+      """
+  ```
+
+- **Controllers** não precisam de docstring: a documentação deles é o `summary`/`responses` da rota, que vira o Swagger.
+- **Comentários** explicam o **porquê**, não o quê (ex.: `# 2 MB: limite também aplicado no Nginx`).
+- **Frontend:** os tipos TypeScript são a principal documentação; JSDoc de 1–2 linhas em `services/`, `hooks/` e `contexts/`.
+- **READMEs de módulo** (`backend/README.md`, `frontend/README.md`) com: pré-requisitos, como rodar, como rodar os testes, estrutura de pastas com 1 linha por pasta, comandos úteis (ex.: criar migração).
+
+### 10.4 Documentação da AWS (reports + scripts)
+
+Como o GitHub não "vê" o console da AWS, cada recurso criado gera **evidência versionada**:
+
+1. **Report** `docs/aws/report_XX_<tema>.md` (seguindo o template abaixo);
+2. **Script** `infra/scripts/XX_<tema>.sh` com os comandos AWS CLI equivalentes (reprodutibilidade);
+3. **Prints** em `docs/aws/img/` referenciados no report;
+4. **Saídas de verificação** (comandos `aws ... describe-*` e o resultado esperado) coladas no report.
+
+**Template de report** (`docs/aws/TEMPLATE_report.md`):
+
+```markdown
+# Report XX — <Tema>
+
+| Campo | Valor |
+|---|---|
+| Responsável | <nome> |
+| Issue | #<n> |
+| Data | AAAA-MM-DD |
+| Script relacionado | `infra/scripts/XX_<tema>.sh` |
+
+## 1. Objetivo
+O que este recurso resolve na arquitetura.
+
+## 2. Pré-requisitos
+Recursos/reports que precisam existir antes.
+
+## 3. Decisões e configurações
+Tabela com cada configuração escolhida e o porquê.
+
+## 4. Passo a passo (console)
+Passos numerados, com prints (`![descrição](img/report_XX_passo1.png)`).
+
+## 5. Equivalente via AWS CLI
+Como rodar o script e o que ele faz.
+
+## 6. Recursos criados
+| Recurso | Nome | ID |
+|---|---|---|
+
+## 7. Verificação
+Comandos de teste e saída esperada (ex.: `aws ec2 describe-route-tables ...`).
+
+## 8. Como conectar / integrar
+Como outros componentes usam este recurso.
+
+## 9. Custos
+Estimativa e o que está coberto pelo free tier/créditos.
+
+## 10. Problemas encontrados e soluções
+
+## 11. Como desfazer
+Ordem de exclusão (ou referência ao `99_teardown.sh`).
+
+## 12. Referências
+Links da documentação oficial da AWS.
+```
+
+**Nunca** colocar em report ou print: senhas, access keys, `JWT_SECRET`, `DATABASE_URL` completa. IDs de recursos e o Account ID podem aparecer.
+
+### 10.5 Convenções dos scripts
+
+- Executados no **AWS CloudShell** (ADR-006): `git clone` do repositório público no CloudShell e `bash infra/scripts/XX_*.sh`. O diretório home do CloudShell persiste entre sessões, então `infra/.state/` continua lá.
+- `#!/usr/bin/env bash` + `set -euo pipefail`; todos fazem `source 00_env.sh` e `lib.sh`.
+- **Lineares e comentados** (simplificação pelo prazo): o script é o registro fiel dos comandos usados, na ordem, e recria o recurso numa conta limpa. Não precisa verificar se o recurso já existe.
+- Fluxo recomendado: executar o script (em vez de clicar no console) e depois tirar os prints do console mostrando o resultado. Assim o script e o report nunca divergem.
+- IDs criados são gravados em `infra/.state/outputs.env` (no `.gitignore`) para uso pelos scripts seguintes.
+- `99_teardown.sh` é desejável; o mínimo é o report 08 descrever a ordem de exclusão manual.
+
+### 10.6 Diário de bordo
+
+Uma issue fixada (*pinned*) chamada **"Diário de bordo da equipe"** recebe, todo dia, **um comentário de cada membro** no formato:
+
+```markdown
+**D3 — <nome>**
+- Fiz: <o que concluiu, com links de PR/issue>
+- Próximo: <o que faz amanhã>
+- Bloqueios / aprendizados: <opcional>
+```
+
+Por que uma issue e não um arquivo: comentários não geram conflito de merge, ficam com autor e data automáticos e o professor vê tudo em um só lugar. Esse diário é a base para "descrever os passos executados" na apresentação e pode ser preenchido logo após a daily.
+
+---
+
+## 11. Fluxo de trabalho Git e rastreabilidade
+
+- **Modelo:** GitHub Flow. `main` protegida: só entra via PR, com **1 aprovação** de outro integrante e CI verde.
+- **Branches:** `<tipo>/<n-issue>-<descricao-curta>`, ex.: `feat/8-registro-usuario`, `docs/14-report-vpc`.
+- **Commits:** Conventional Commits em português: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `infra`. Escopo opcional: `feat(auth): ...`.
+- **PRs:** título igual ao da issue; descrição com `Closes #<n>`, o que foi feito, como testar, prints (se UI/AWS). Usar o `pull_request_template.md`.
+- **Estratégia de merge:** **"Create a merge commit"** (desabilitar *Squash* e *Rebase* nas configurações do repo). Squash juntaria todos os commits em um só e apagaria a sequência test → feat → refactor de cada autor.
+- **Identidade:** cada integrante configura `git config user.name` e `user.email` com o **mesmo email da conta GitHub** — senão os commits não contam no perfil nem em *Insights → Contributors*.
+- **Pareamento:** quando duas pessoas trabalharem juntas, adicionar `Co-authored-by: Nome <email>` no final da mensagem do commit.
+- **GitHub Projects:** quadro Kanban (Backlog → Em andamento → Em revisão → Concluído) ligado às issues.
+- **Evidência para a apresentação:** `git shortlog -sne`, *Insights → Contributors* e a lista de issues fechadas por responsável.
+
+---
+
+## 12. Segurança (checklist)
+
+- [ ] Senhas com Argon2id; nunca logadas nem retornadas.
+- [ ] JWT com segredo forte vindo do Parameter Store; expiração de 60 min; revogação no logout.
+- [ ] Mensagens de erro de login genéricas.
+- [ ] Validação de entrada em todos os schemas (tamanho máximo em todo campo texto).
+- [ ] Upload: tipo verificado por magic bytes, limite de 2 MB (API e Nginx).
+- [ ] `.env`, `infra/.state/`, chaves e `*.pem` no `.gitignore`; *secret scanning* do GitHub ligado.
+- [ ] RDS sem acesso público, SG aceitando só o SG da EC2.
+- [ ] S3 com Block Public Access; acesso por role; URLs pré-assinadas com validade curta.
+- [ ] EC2 sem porta 22 aberta; IMDSv2 obrigatório; disco criptografado.
+- [ ] Proprietário e todos os membros com MFA no Builder ID; nenhum IAM user nem access key de pessoa (CLI via CloudShell ou `aws login`); recursos avançados não ativados.
+- [ ] Headers de segurança no Nginx (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`).
+
+---
+
+## 13. Custos e cuidados com a conta
+
+A conta está no **plano gratuito da nova experiência**: créditos iniciais (US$ 100, segundo o anúncio da AWS) mais bônus por atividades concluídas no console. No plano gratuito não há cobrança enquanto houver créditos e a conta não for convertida para o plano pago (só o proprietário pode fazer isso). Saldo e validade dos créditos: AWS Settings → Faturamento. Se um dia a conta for para o plano pago, definir um **limite de gasto mensal** no projeto (opção que existe na nova experiência): ao atingi-lo, a AWS pausa o projeto em vez de cobrar mais.
+
+| Recurso | Custo aproximado | Cuidado |
+|---|---|---|
+| EC2 `t3.micro` | coberto (free tier/créditos) | **Parar** a instância quando não estiver em uso |
+| RDS `db.t4g.micro` single-AZ 20 GB | coberto (free tier/créditos) | Nunca ligar Multi-AZ; parar quando não usar (o RDS religa sozinho após 7 dias parado) |
+| IPv4 público / Elastic IP | ~US$ 0,005/h | Cobrado também com a instância parada. Liberar o EIP no teardown |
+| S3 | centavos | — |
+| Parameter Store (padrão), VPC, IGW, Endpoint Gateway S3, SG, route tables, CloudTrail event history | grátis | — |
+| **NAT Gateway** | ~US$ 32/mês + tráfego | **Não criar** |
+
+- Criar um **AWS Budget** de US$ 10 com alertas por email em 50%, 80% e 100% (report 00). Mesmo sem cobrança, ele avisa se algum recurso esquecido estiver consumindo os créditos.
+- Rodar `99_teardown.sh` ao final da disciplina.
+
+---
+
+## 14. Fora do escopo / evoluções futuras
+
+HTTPS com domínio + Let's Encrypt (ou ALB + ACM); refresh token e cookie `httpOnly`; recuperação de senha por email (SES); papéis/admin; ECR + pipeline de deploy automático (GitHub Actions + SSM Run Command); Auto Scaling Group + ALB usando a subnet pública B; CloudFront na frente do S3; logs no CloudWatch Logs; Terraform.
+
+---
+
+## 15. Log de decisões (ADRs)
+
+Formato: `ADR-NNN — Título | Data | Status | Contexto | Decisão | Consequências`.
+
+**ADR-001 — RDS PostgreSQL em vez de DynamoDB** | 2026-11-04 | Aceita
+*Contexto:* a disciplina incentiva serviços AWS; DynamoDB foi cogitado. *Decisão:* RDS PostgreSQL. *Motivos:* o domínio é relacional e precisa de unicidade em `email` e `username` — no DynamoDB isso exige transações com itens auxiliares; SQLAlchemy/Alembic não funcionam com DynamoDB; com SQLAlchemy os testes rodam em SQLite em memória; o RDS obriga a desenhar subnets privadas, DB subnet group e SG por referência, o que exercita diretamente os requisitos de VPC, SG e route tables. *Consequências:* custo por hora (coberto pelo free tier/créditos) e necessidade de parar a instância quando não estiver em uso.
+
+**ADR-002 — Logout com revogação de token** | 2026-11-04 | Aceita
+JWT é stateless; para que o logout invalide o token no servidor, os `jti` revogados ficam em `revoked_tokens` e são checados em `get_current_user`. Custo: uma consulta por requisição autenticada (aceitável no protótipo).
+
+**ADR-003 — Merge commit em vez de squash** | 2026-11-04 | Aceita
+Preserva a autoria e a sequência TDD dos commits, que são critérios de avaliação.
+
+**ADR-004 — Session Manager em vez de SSH** | 2026-11-04 | Aceita
+Nenhuma porta administrativa exposta, nenhuma chave `.pem` compartilhada, e cada sessão fica registrada no CloudTrail com a identidade de quem acessou.
+
+**ADR-005 — Ajustes de escopo pelo prazo de 1 semana** | 2026-11-04 | Aceita
+*Contexto:* o prazo de entrega é de 7 dias. *Decisão:* manter todos os requisitos e serviços planejados, mas trabalhar por contrato e stubs (seção 1.3), fazer deploy do esqueleto no dia 3, congelar funcionalidades no dia 5, reduzir cobertura para 70%, limitar testes de frontend a 3 arquivos e escrever scripts AWS CLI lineares. *Consequências:* menos garantias automatizadas no frontend e scripts menos robustos; compensado pelo checklist de validação manual em produção. Plano B documentado para RDS e S3.
+
+**ADR-006 — Acesso da equipe pela página Equipe do AWS Settings + CloudShell** | 2026-11-04 (revisada em 2026-11-05) | Aceita
+*Contexto:* a conta foi criada pela nova experiência da AWS (lançada em set/2026). Nela não dá para criar IAM users com senha de console; o acesso humano é por convite na página Equipe, e cada membro entra com o próprio AWS Builder ID. A versão anterior deste ADR (grupo de IAM users administradores) ficou inviável. *Decisão:* convidar os 4 membros para o projeto `proto1` pela página Equipe; nenhum IAM user nem access key para pessoas; CLI via CloudShell (ou `aws login`, com credenciais temporárias); a role da EC2 continua com mínimo privilégio; não ativar os recursos avançados. *Consequências:* configuração mais simples que a planejada (não há usuários, grupos nem senhas para gerenciar). Todos os membros são administradores do projeto, sem como restringir; isso é mitigado pela tag `Owner`, pelo CloudTrail (`onBehalfOf`) e pelo combinado de cada um mexer só na própria frente.
+
+**ADR-007 — Repositório público** | 2026-11-04 | Aceita
+A EC2 clona o repositório no user data; com repositório público isso dispensa deploy keys/tokens. Exige que nenhum segredo vá para o repo (já garantido por `.gitignore`, Parameter Store e *secret scanning*). Se a disciplina exigir repositório privado, usar uma *deploy key* somente leitura na EC2 e registrar no report 06.
+
+**ADR-008 — Região us-east-2 (Ohio)** | 2026-11-05 | Aceita
+Na nova experiência, a AWS atribui a região do projeto pelo país do cadastro (Brasil → `us-east-2`), e ela não pode ser trocada sem ativar os recursos avançados (irreversível). Todos os recursos, scripts, ARNs e o endpoint do S3 usam `us-east-2`. Impacto para o protótipo: nenhum, além de uma latência um pouco maior a partir do Brasil.
+
+<!-- Novas decisões: adicionar abaixo, numeração sequencial -->
+
+**ADR-009 — Detalhes da camada de banco (issue #5)** | 2026-11-06 | Aceita
+*Contexto:* a §5.4/§6.3 não definiam o corpo do 503 do health, o tratamento de fuso no SQLite nem o isolamento entre testes. *Decisão:* (1) `/api/health` com banco fora do ar lança `DatabaseUnavailableError` → 503 no formato padrão `{"detail", "code": "DATABASE_UNAVAILABLE"}`, mantendo o controller fino; (2) colunas de data usam o tipo `UTCDateTime` (`core/database.py`), que devolve datas com fuso UTC também no SQLite, evitando `TypeError` ao comparar com `datetime.now(UTC)`; (3) o fixture `engine` recria o SQLite em memória a cada teste (em vez de rollback de transação aninhada, que exige ajustes no driver `pysqlite`); (4) `connect_timeout=5` no PostgreSQL, para o health responder 503 em segundos se o RDS estiver inacessível; (5) teste que aplica as migrações num SQLite e compara com os modelos, acusando migração faltante. *Consequências:* testes isolados e simples; recriar as tabelas a cada teste custa poucos milissegundos.
