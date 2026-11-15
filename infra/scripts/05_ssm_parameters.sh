@@ -6,6 +6,8 @@
 #   export OWNER=SeuNome
 #   export SUFIXO=grupob31641132
 #   export CSRF_TRUSTED_ORIGINS=https://app.example.com
+#   export PUBLIC_HOST=app.example.com
+#   export LOG_LEVEL=INFO
 #   bash infra/scripts/05_ssm_parameters.sh
 #
 # Pré-requisitos: report 03 (bucket e role da EC2) e report 04 (DATABASE_URL
@@ -32,6 +34,12 @@ fi
 CSRF_TRUSTED_ORIGINS="${CSRF_TRUSTED_ORIGINS:-}"
 [ -n "${CSRF_TRUSTED_ORIGINS}" ] \
   || fail "Defina CSRF_TRUSTED_ORIGINS com uma ou mais origens HTTPS."
+PUBLIC_HOST="${PUBLIC_HOST:-}"
+[ -n "${PUBLIC_HOST}" ] || fail "Defina PUBLIC_HOST com o domínio público da aplicação."
+case "${PUBLIC_HOST}" in
+  *[[:space:]]*|*[/:,=]*) fail "PUBLIC_HOST não pode conter espaços, esquema ou separadores." ;;
+esac
+LOG_LEVEL="${LOG_LEVEL:-INFO}"
 
 IFS=',' read -r -a TRUSTED_ORIGINS <<< "${CSRF_TRUSTED_ORIGINS}"
 for origin in "${TRUSTED_ORIGINS[@]}"; do
@@ -80,6 +88,10 @@ put_parameter "${PARAM_PREFIX}/STORAGE_BACKEND" "s3" \
   "proto1: backend de armazenamento de imagens"
 put_parameter "${PARAM_PREFIX}/AWS_REGION" "${AWS_REGION}" \
   "proto1: região AWS da aplicação"
+put_parameter "${PARAM_PREFIX}/LOG_LEVEL" "${LOG_LEVEL}" \
+  "proto1: nível de log da aplicação"
+put_parameter "${PARAM_PREFIX}/PUBLIC_HOST" "${PUBLIC_HOST}" \
+  "proto1: domínio público da aplicação"
 unset JWT_SECRET CSRF_SECRET
 
 log "3/3 Verificação sem descriptografar valores"
