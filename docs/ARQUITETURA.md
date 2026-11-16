@@ -252,7 +252,7 @@ sequenceDiagram
 │   │   ├── report_07_deploy.md
 │   │   ├── report_08_teardown.md # issue #26
 │   │   └── img/                  # prints (report_XX_descricao.png; validação em img/report_24/)
-│   └── apresentacao/             # slides, roteiro da demo, tabela de contribuições
+│   └── apresentacao/             # roteiro.md: roteiro da apresentação e tabela de contribuições (#27)
 ├── backend/
 │   ├── app/
 │   │   ├── main.py               # cria o app, registra routers e handlers de erro
@@ -1057,7 +1057,7 @@ O diário de bordo diário planejado (uma issue fixada com um comentário por me
 - **Issues** atribuídas a cada responsável, com tarefas e critérios de aceite;
 - **Reports** em `docs/aws/`, com responsável e data no cabeçalho.
 
-O roteiro da apresentação e a tabela de contribuições de cada membro ficam na #27.
+O roteiro da apresentação e a tabela de contribuições de cada membro ficam em [`apresentacao/roteiro.md`](apresentacao/roteiro.md) (#27).
 
 ---
 
@@ -1181,3 +1181,6 @@ Na nova experiência, a AWS atribui a região do projeto pelo país do cadastro 
 *Contexto:* a §10.6 e o `CONTRIBUTING.md` previam uma issue fixada com um comentário de cada membro por dia. Ela não foi criada. *Decisão:* o histórico do trabalho é o próprio GitHub: commits pequenos em Conventional Commits com o número da issue e o porquê no corpo, PRs com template e revisão, issues atribuídas e reports com responsável e data. O roteiro da apresentação e a tabela de contribuições de cada membro ficam na #27. *Consequências:* nenhuma redundância entre diário e histórico; a contribuição individual é vista em *Insights → Contributors*, `git shortlog -sne`, nas issues fechadas por responsável e na #27.
 
 **Nota de revisão ao ADR-006 (issue #25):** o projeto do AWS Settings foi criado com o nome **`proto-tes`**, não `proto1`. O prefixo `proto1-` dos recursos e a tag `Project=proto1` não mudaram (§8.1).
+
+**ADR-018 — Apresentação sem slides (issue #27)** | 2026-11-16 | Aceita (altera a §4 original)
+*Contexto:* a §4 e a #27 previam slides em `docs/apresentacao/`. A especificação pede o protótipo funcionando, os passos executados e a colaboração de cada membro, e tudo isso já existe na aplicação em produção, no console da AWS, nos reports e no GitHub. *Decisão:* a apresentação é conduzida sem slides, seguindo o [`apresentacao/roteiro.md`](apresentacao/roteiro.md): demo ao vivo, recursos no console, trechos de código e a tabela de contribuições, com a divisão de quem fala cada parte. *Consequências:* nada a manter em paralelo com a documentação; a apresentação depende da EC2 e do RDS ligados, com o vídeo gravado no ensaio e os prints dos reports como plano B (§1.3).
