@@ -65,4 +65,4 @@ Não há diário de bordo separado (ADR-017 em [`docs/ARQUITETURA.md`](docs/ARQU
 - **PR** com o template preenchido: o que foi feito, como testar e evidências.
 - **Report** da AWS com o seu nome e a data no cabeçalho.
 
-O roteiro da apresentação e a tabela de contribuições de cada membro ficam na issue #27.
+O roteiro da apresentação e a tabela de contribuições de cada membro ficam em [`docs/apresentacao/roteiro.md`](docs/apresentacao/roteiro.md) (#27).

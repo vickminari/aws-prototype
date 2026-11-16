@@ -176,4 +176,4 @@ A validação do fluxo completo em produção (cadastro, foto, perfil, senha, lo
 | Thalys Yago | Frontend base, camada de API e sessão, login, cadastro e perfil, security groups, modo escuro e transições | #4, #12, #13, #15, #18, #37, #53 | [@ThalysYago](https://github.com/ThalysYago) |
 | Jailson Zarur | CI, dashboard e logout, alteração de senha, EC2 e Elastic IP, deploy e HTTPS | #6, #14, #16, #22, #23 | [@jailsonzarur](https://github.com/jailsonzarur) |
 
-Cada issue foi feita numa branch própria e entrou na `main` por PR revisado, com merge commit (sem squash), para preservar a autoria e a sequência dos commits. A tabela de contribuições detalhada fica na apresentação (#27).
+Cada issue foi feita numa branch própria e entrou na `main` por PR revisado, com merge commit (sem squash), para preservar a autoria e a sequência dos commits. A tabela de contribuições detalhada fica no [roteiro da apresentação](docs/apresentacao/roteiro.md#tabela-de-contribuições) (#27).
