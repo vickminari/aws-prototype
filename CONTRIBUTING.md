@@ -13,7 +13,7 @@ git clone https://github.com/vickminari/aws-prototype.git
 ## 2. Fluxo: uma issue = uma branch = um PR
 
 ```bash
-git switch main && git pull                 # parte da main atualizada
+git switch dev && git pull                  # parte da dev atualizada
 git switch -c feat/8-registro               # branch da issue
 git commit -m "feat(auth): implementa registro de usuário"
 git push -u origin feat/8-registro
@@ -25,7 +25,13 @@ gh pr create --fill                         # ou pelo site do GitHub
 3. Peça revisão a outro membro e mova a issue para **Em revisão**.
 4. Com a aprovação, faça o merge com **Create a merge commit** (único método habilitado).
 
-Nunca faça push direto na `main`, `push --force` ou squash.
+Nunca faça push direto na `dev` ou na `main`, `push --force` ou squash.
+
+### Branches `dev` e `main` (sprint 2, ADR-031)
+
+- **`dev`** é a branch padrão: todo PR de issue vai para ela, com 1 aprovação.
+- **`main`** é o que está em produção. Só recebe PR `dev → main`, quando a equipe decide publicar (fim de marco, feature freeze). Esse PR precisa da aprovação dos **outros 4 membros**, então abra com antecedência.
+- Correção urgente também passa pela `dev`, e depois vai para a `main` num PR `dev → main`.
 
 ## 3. Nomes de branch e commits
 
