@@ -16,27 +16,11 @@ from app.models import (
 )
 
 
-def make_media(owner, **fields) -> MediaObject:
-    """Arquivo válido do dono informado; qualquer campo pode ser sobrescrito."""
-    file_id = fields.pop("id", uuid4())
-    media_type = fields.get("media_type", "image")
-    data = {
-        "id": file_id,
-        "owner_id": owner.id,
-        "media_type": media_type,
-        "name": "praia.jpg",
-        "original_filename": "praia.jpg",
-        "extension": "jpg",
-        "mime_type": "image/jpeg",
-        "size_bytes": 2048,
-        "storage_key": f"users/{owner.id}/{media_type}s/{file_id}/original.jpg",
-    }
-    return MediaObject(**(data | fields))
-
-
-def test_create_media_with_metadata_and_tags_persists_and_reads(db_session, user_factory):
+def test_create_media_with_metadata_and_tags_persists_and_reads(
+    db_session, user_factory, media_factory
+):
     owner = user_factory()
-    media = make_media(owner)
+    media = media_factory(owner, persist=False)
     media.image = ImageMetadata(width=800, height=600, format="JPEG", exif={"Make": "Canon"})
     media.tags = [Tag(owner_id=owner.id, name="praia"), Tag(owner_id=owner.id, name="férias")]
     db_session.add(media)
@@ -56,9 +40,11 @@ def test_create_media_with_metadata_and_tags_persists_and_reads(db_session, user
     assert sorted(tag.name for tag in saved.tags) == ["férias", "praia"]
 
 
-def test_create_video_with_metadata_and_variants(db_session, user_factory):
+def test_create_video_with_metadata_and_variants(db_session, user_factory, media_factory):
     owner = user_factory()
-    media = make_media(owner, media_type="video", extension="mp4", mime_type="video/mp4")
+    media = media_factory(
+        owner, persist=False, media_type="video", extension="mp4", mime_type="video/mp4"
+    )
     media.video = VideoMetadata(duration_seconds=12.5, width=1920, height=1080, fps=30.0)
     media.variants = [
         MediaVariant(
@@ -90,9 +76,11 @@ def test_create_video_with_metadata_and_variants(db_session, user_factory):
     }
 
 
-def test_create_audio_with_metadata(db_session, user_factory):
+def test_create_audio_with_metadata(db_session, user_factory, media_factory):
     owner = user_factory()
-    media = make_media(owner, media_type="audio", extension="mp3", mime_type="audio/mpeg")
+    media = media_factory(
+        owner, persist=False, media_type="audio", extension="mp3", mime_type="audio/mpeg"
+    )
     media.audio = AudioMetadata(
         duration_seconds=180.0, bitrate=128000, sample_rate=44100, channels=2, codec="mp3"
     )
@@ -126,8 +114,10 @@ def test_same_tag_name_for_different_owners_is_allowed(db_session, user_factory)
     db_session.commit()
 
 
-def test_repeated_variant_label_for_same_media_raises_integrity_error(db_session, user_factory):
-    media = make_media(user_factory(), media_type="video")
+def test_repeated_variant_label_for_same_media_raises_integrity_error(
+    db_session, user_factory, media_factory
+):
+    media = media_factory(user_factory(), persist=False, media_type="video")
     db_session.add(media)
     db_session.commit()
 
@@ -148,35 +138,39 @@ def test_repeated_variant_label_for_same_media_raises_integrity_error(db_session
 
 @pytest.mark.parametrize(("field", "value"), [("media_type", "document"), ("status", "deleted")])
 def test_invalid_media_type_or_status_raises_integrity_error(
-    field, value, db_session, user_factory
+    field, value, db_session, user_factory, media_factory
 ):
-    db_session.add(make_media(user_factory(), **{field: value}))
+    db_session.add(media_factory(user_factory(), persist=False, **{field: value}))
 
     with pytest.raises(IntegrityError):
         db_session.commit()
 
 
-def test_duplicate_storage_key_raises_integrity_error(db_session, user_factory):
+def test_duplicate_storage_key_raises_integrity_error(db_session, user_factory, media_factory):
     owner = user_factory()
-    db_session.add(make_media(owner, storage_key="users/x/images/y/original.jpg"))
+    db_session.add(media_factory(owner, persist=False, storage_key="users/x/images/y/original.jpg"))
     db_session.commit()
 
-    db_session.add(make_media(owner, storage_key="users/x/images/y/original.jpg"))
+    db_session.add(media_factory(owner, persist=False, storage_key="users/x/images/y/original.jpg"))
     with pytest.raises(IntegrityError):
         db_session.commit()
 
 
-def test_media_with_unknown_owner_raises_integrity_error(db_session, user_factory):
+def test_media_with_unknown_owner_raises_integrity_error(db_session, user_factory, media_factory):
     owner = user_factory()
-    db_session.add(make_media(owner, owner_id=uuid4()))
+    db_session.add(media_factory(owner, persist=False, owner_id=uuid4()))
 
     with pytest.raises(IntegrityError):
         db_session.commit()
 
 
-def test_deleting_media_removes_metadata_variants_and_tag_links(db_session, user_factory):
+def test_deleting_media_removes_metadata_variants_and_tag_links(
+    db_session, user_factory, media_factory
+):
     owner = user_factory()
-    media = make_media(owner, media_type="video", extension="mp4", mime_type="video/mp4")
+    media = media_factory(
+        owner, persist=False, media_type="video", extension="mp4", mime_type="video/mp4"
+    )
     media.video = VideoMetadata(duration_seconds=1.0, width=640, height=360)
     media.variants = [
         MediaVariant(
@@ -203,3 +197,12 @@ def test_deleting_media_removes_metadata_variants_and_tag_links(db_session, user
     assert count(media_tags) == 0
     # A tag continua no vocabulário do usuário; só a associação com o arquivo some
     assert count(Tag) == 1
+
+
+def test_media_factory_persists_file_with_new_owner_by_default(db_session, media_factory):
+    media = media_factory()
+    db_session.expunge_all()
+
+    saved = db_session.get(MediaObject, media.id)
+
+    assert saved.storage_key == f"users/{saved.owner_id}/images/{saved.id}/original.jpg"
