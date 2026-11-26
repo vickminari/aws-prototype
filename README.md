@@ -140,7 +140,7 @@ npm run lint && npm run format:check && npm run build
 
 Os testes do backend não precisam de PostgreSQL (SQLite em memória). Resultado na `main` em 2026-11-15: **backend com 400 testes e 96% de cobertura**; **frontend com 30 testes em 10 arquivos**.
 
-O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda os mesmos comandos em todo PR e push na `main`, nos jobs **Backend** e **Frontend**. O backend foi feito com TDD: em cada funcionalidade, os commits `test(...)` vêm antes dos `feat(...)` ([§6](docs/ARQUITETURA.md#6-estratégia-de-testes-tdd-simplificado)).
+O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda os mesmos comandos em todo PR e em todo push na `main` e na `dev`, nos jobs **Backend** e **Frontend**. O backend foi feito com TDD: em cada funcionalidade, os commits `test(...)` vêm antes dos `feat(...)` ([§6](docs/ARQUITETURA.md#6-estratégia-de-testes-tdd-simplificado)).
 
 ## Deploy na AWS
 
