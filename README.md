@@ -10,6 +10,7 @@ Aplicação web com cadastro de usuários, login/logout, dashboard e edição de
 
 ## Sumário
 
+- [Sprint 2 (em andamento)](#sprint-2-em-andamento)
 - [Funcionalidades](#funcionalidades)
 - [Arquitetura](#arquitetura)
 - [Stack](#stack)
@@ -19,6 +20,24 @@ Aplicação web com cadastro de usuários, login/logout, dashboard e edição de
 - [Reports da AWS](#reports-da-aws)
 - [Documentação](#documentação)
 - [Equipe e responsabilidades](#equipe-e-responsabilidades)
+
+## Sprint 2 (em andamento)
+
+De 26/11 a 09/12/2026 o protótipo vira um **Sistema de Gerenciamento Multimídia (SGM)**: um "drive" onde cada usuário envia, organiza, pesquisa e visualiza imagens, áudios e vídeos, com cota de 100 MB. As propriedades de cada arquivo são extraídas automaticamente (EXIF das imagens, duração e codecs de áudio e vídeo) e os vídeos ganham versões 1080p, 720p e 480p.
+
+Na AWS, a aplicação passa a rodar atrás de **CloudFront** (HTTPS) e de um **Application Load Balancer**, num **Auto Scaling group** que escala por CPU e memória. O processamento de áudio e vídeo vai para uma **fila SQS** consumida por **workers** com Auto Scaling próprio, que escala pelo tamanho da fila. Autenticação, perfil, VPC e RDS da sprint 1 continuam.
+
+| Marco | Período | O que fica pronto |
+|---|---|---|
+| M4 — Fundação | 26–27/11 | Documentos, modelo de dados e contratos da API, imagens no GHCR, layout do drive |
+| M5 — Mídia, processamento e infraestrutura | 27/11–03/12 | Upload, pesquisa, processamento das três mídias, worker, telas e recursos AWS (bucket, fila, roles, SGs, ALB, CloudFront) |
+| M6 — Escala e deploy | 01–05/12 | Auto Scaling do app e dos workers, deploy por instance refresh, desligamento da EC2 da sprint 1 |
+| M7 — Entrega | 06–09/12 | Teste de carga, validação em produção, documentos finais e apresentação |
+
+- Requisitos: [`docs/REQUISITOS.md`](docs/REQUISITOS.md). Arquitetura e decisões: [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md) (ADR-019 a ADR-030).
+- Tarefas: [issues #62 a #91](https://github.com/vickminari/aws-prototype/milestones), com responsáveis, dependências e critérios de aceite. Regras de tags e reports da sprint 2: [`CONTRIBUTING.md`](CONTRIBUTING.md#8-sprint-2-milestones-labels-e-reports).
+
+O restante deste README descreve a sprint 1 e é reescrito no fim da sprint 2 (#90).
 
 ## Funcionalidades
 
@@ -121,7 +140,7 @@ npm run lint && npm run format:check && npm run build
 
 Os testes do backend não precisam de PostgreSQL (SQLite em memória). Resultado na `main` em 2026-11-15: **backend com 400 testes e 96% de cobertura**; **frontend com 30 testes em 10 arquivos**.
 
-O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda os mesmos comandos em todo PR e push na `main`, nos jobs **Backend** e **Frontend**. O backend foi feito com TDD: em cada funcionalidade, os commits `test(...)` vêm antes dos `feat(...)` ([§6](docs/ARQUITETURA.md#6-estratégia-de-testes-tdd-simplificado)).
+O CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) roda os mesmos comandos em todo PR e em todo push na `main` e na `dev`, nos jobs **Backend** e **Frontend**. O backend foi feito com TDD: em cada funcionalidade, os commits `test(...)` vêm antes dos `feat(...)` ([§6](docs/ARQUITETURA.md#6-estratégia-de-testes-tdd-simplificado)).
 
 ## Deploy na AWS
 
@@ -159,6 +178,7 @@ A validação do fluxo completo em produção (cadastro, foto, perfil, senha, lo
 | Documento | Conteúdo |
 |---|---|
 | [ARQUITETURA.md](docs/ARQUITETURA.md) | Fonte da verdade: requisitos, diagramas, camadas, endpoints, modelo de dados, AWS, deploy, segurança, custos e as decisões (ADRs) |
+| [REQUISITOS.md](docs/REQUISITOS.md) | Requisitos da sprint 2 (SGM): funcionais, regras de negócio, não funcionais mensuráveis e rastreabilidade |
 | [Decisão de autenticação](docs/DECISAO_AUTENTICACAO.md) | JWT em cookie `HttpOnly` com proteção CSRF (ADR-010) |
 | [backend/README.md](backend/README.md) | Como rodar e testar a API, fixtures, camadas, migrações e variáveis |
 | [frontend/README.md](frontend/README.md) | Como rodar e testar o frontend, rotas, sessão, formulários e tema |

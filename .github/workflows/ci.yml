@@ -1,11 +1,11 @@
-# CI (ARQ §6.3): lint, formatação, testes e build em todo PR e na main.
+# CI (ARQ §6.3): lint, formatação, testes e build em todo PR, na dev e na main.
 # Os jobs "Backend" e "Frontend" são os required checks da branch main.
 name: CI
 
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, dev]
 
 # Um push novo no mesmo PR cancela a execução anterior
 concurrency:
