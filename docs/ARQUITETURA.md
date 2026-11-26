@@ -130,7 +130,7 @@ Nenhum plano B foi acionado: o RDS (report 04) e o S3 com a role da EC2 (reports
 1. **Contratos primeiro.** Endpoints, schemas (seção 5.5), mensagem da fila (seção 5.10), chaves do S3 e status do processamento estão definidos aqui desde o D1. Backend, frontend e infraestrutura começam em paralelo.
 2. **Stubs no lugar de dependências.** Os services de processamento (`services/processing/`) são funções puras (caminho do arquivo → dados extraídos e arquivos gerados), testáveis sem AWS e sem banco. A fila tem implementação em memória (`QUEUE_BACKEND=memory`) e o storage tem implementação local, inclusive para o upload pré-assinado. O frontend trabalha contra o contrato com os services mockados.
 3. **Infraestrutura em paralelo ao código.** S3, SQS, IAM, SGs e ALB não dependem do código novo; a CloudFront é validada primeiro na frente da `proto1-app` (#84).
-4. **Walking skeleton na infra nova** assim que ALB, launch template e ASG do app existirem (#83–#85): a `main` atual servida por CloudFront → ALB → ASG. Daí em diante, cada merge na `main` vai para produção por instance refresh (seção 9).
+4. **Walking skeleton na infra nova** assim que ALB, launch template e ASG do app existirem (#83–#85): a `main` atual servida por CloudFront → ALB → ASG. Daí em diante, cada PR `dev → main` vai para produção por instance refresh (seção 9).
 5. **Feature freeze no fim de 05/12.** Depois disso, só correções, testes, documentação e ensaio.
 
 **Classificação do escopo:**
@@ -371,7 +371,7 @@ sequenceDiagram
     participant A as ASG (app e worker)
     participant E as EC2 nova
 
-    D->>G: merge na main
+    D->>G: merge do PR dev → main
     G->>G: CI verde (ruff, pytest, vitest, build)
     G->>R: push aws-prototype-api, -worker e -web com tag SHA
     D->>C: IMAGE_TAG=<sha> bash infra/scripts/18_deploy.sh
@@ -417,6 +417,7 @@ sequenceDiagram
 | Acesso às instâncias | SSM Session Manager (porta 22 fechada, sem key pair) | SSH com chave | Sem porta aberta e com registro no CloudTrail (ADR-004) |
 | Acesso humano à AWS | Página **Equipe** do AWS Settings, cada membro com seu AWS Builder ID; CLI no **CloudShell** | IAM users | Modelo da nova experiência; nenhuma chave pode vazar (ADR-006) |
 | Visibilidade do repositório | Público | Privado | As instâncias clonam e o GHCR publica sem credenciais; por design não há segredos no repo (ADR-007) |
+| Branches | `dev` recebe os PRs das issues (1 aprovação); `main` = produção, só recebe `dev → main` (4 aprovações) (ADR-031) | Só a `main` (GitHub Flow, sprint 1) | Merge do dia a dia não dispara deploy; a versão em produção é decidida pela equipe |
 | Marcação dos recursos | Novos com prefixo `proto2-` e `Project=proto2`; modificados recebem `Project=proto2` + `PreviousProject=proto1`; intocados continuam `proto1` (ADR-019) | Renomear tudo para `proto2` | Mostra o que mudou entre os protótipos e permite um teardown por tag |
 
 ---
@@ -1683,13 +1684,13 @@ Detalhes no [report 07](aws/report_07_deploy.md) (ADR-015). Na `proto1-app`, pel
 
 ### 9.3 Walking skeleton da sprint 2 (planejado, #83–#85)
 
-Assim que existirem o ALB (#83), a CloudFront final (#84) e o ASG do app (#85), a `main` do momento (ainda sem as funcionalidades da sprint 2) é servida por CloudFront → ALB → ASG, com as imagens publicadas pela #65. Isso valida cedo rede, SGs, roles, Parameter Store, GHCR, health check e cookie/CSRF no domínio novo. Daí em diante, cada merge na `main` vai para produção pelo fluxo da seção 9.4.
+Assim que existirem o ALB (#83), a CloudFront final (#84) e o ASG do app (#85), a `main` do momento (ainda sem as funcionalidades da sprint 2) é servida por CloudFront → ALB → ASG, com as imagens publicadas pela #65. Isso valida cedo rede, SGs, roles, Parameter Store, GHCR, health check e cookie/CSRF no domínio novo. Daí em diante, cada merge de `dev` na `main` vai para produção pelo fluxo da seção 9.4.
 
 ### 9.4 Deploy da sprint 2: imagens no GHCR + instance refresh (planejado, #87)
 
 Detalhes no [report 18](aws/report_18_deploy_proto2.md) (ADR-025).
 
-1. Merge na `main` → CI verde → `images.yml` publica `api`, `worker` e `web` com a tag = SHA.
+1. Merge do PR `dev → main` → CI verde → `images.yml` publica `api`, `worker` e `web` com a tag = SHA.
 2. No CloudShell: `IMAGE_TAG=<sha> bash infra/scripts/18_deploy.sh`, que:
    1. grava `/proto2/prod/IMAGE_TAG`;
    2. dispara `aws autoscaling start-instance-refresh` em `proto2-asg-app` (`MinHealthyPercentage=100`, `MaxHealthyPercentage=200`: sobe a instância nova antes de tirar a antiga) e em `proto2-asg-worker` (se houver instâncias);
@@ -1901,7 +1902,11 @@ O roteiro da apresentação e a tabela de contribuições ficam em [`apresentaca
 
 ## 11. Fluxo de trabalho Git e rastreabilidade
 
-- **Modelo:** GitHub Flow. `main` protegida: só entra via PR, com **1 aprovação** de outro integrante (vale também para administradores). O CI roda em todo PR; não mergear com CI vermelho é um combinado da equipe.
+- **Modelo (sprint 2, ADR-031):** duas branches protegidas, as duas só recebem PR e as regras valem também para administradores.
+  - `dev`: branch padrão do repositório. Recebe os PRs das issues, com **1 aprovação** de outro integrante.
+  - `main`: o que está em produção. Só recebe PRs `dev → main`, abertos quando a equipe decide publicar (fim de marco, feature freeze), com **4 aprovações** (todos menos o autor). Correção urgente também passa pela `dev`.
+  - O CI roda em todo PR e em todo push na `dev` e na `main`; não mergear com CI vermelho é um combinado da equipe.
+  - Na sprint 1 o modelo era GitHub Flow, só com a `main` e 1 aprovação.
 - **Branches:** `<tipo>/<n-issue>-<descricao-curta>`, ex.: `feat/69-upload`, `infra/83-alb`, `docs/90-readme`.
 - **Commits:** Conventional Commits em português: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `infra`, `deploy`. Escopo opcional: `feat(files): ...`. A mensagem cita a issue (`(#n)` no título ou `Refs #n` no corpo).
 - **PRs:** título igual ao da issue; descrição com `Closes #<n>`, o que foi feito, como testar, evidências. Usar o `pull_request_template.md`.
@@ -2103,5 +2108,8 @@ Nota (sprint 2): encerrado para o código novo pelo ADR-030.
 
 **ADR-030 — Fim da exceção do ADR-016: services novos recebem `BinaryIO` ou caminho (issues #67 e #69)** | 2026-11-25 | Aceita (encerra, para o código novo, a exceção do ADR-016)
 *Contexto:* o ADR-016 aceitou `fastapi.UploadFile` nos services do avatar. Na sprint 2 o arquivo de mídia não passa mais pela API (ADR-022), e o worker não tem `UploadFile` nenhum. *Decisão:* os services e a interface de storage da sprint 2 recebem `BinaryIO` (avatar) ou caminhos de arquivo local (processamento); `UploadFile` fica restrito ao controller. O avatar passa a usar `upload_fileobj` no storage v2 (#67). *Consequências:* services sem dependência do FastAPI, reutilizados pela API e pelo worker; o `user_service.update_avatar` ainda recebe `UploadFile` até ser ajustado (seção 14).
+
+**ADR-031 — Branch `dev` para integração e `main` para produção (issue #62)** | 2026-11-25 | Aceita (substitui, para a sprint 2, o GitHub Flow da seção 11)
+*Contexto:* na sprint 2 todo merge na `main` publica imagens no GHCR e pode ir para produção por instance refresh (ADR-025); com 30 issues integrando em paralelo, um merge quebrado afetaria a versão da apresentação. O professor sugeriu uma branch de desenvolvimento. *Decisão:* `dev` vira a branch padrão e recebe os PRs das issues com 1 aprovação; a `main` só recebe PRs `dev → main`, com 4 aprovações (todos menos o autor). `dev` é a padrão para que `Closes #n` feche a issue no merge e os PRs já abram contra ela. *Consequências:* deploy só quando a equipe decide; o merge commit `dev → main` preserva a autoria (ADR-003); uma publicação depende de todos aprovarem, então o PR `dev → main` deve ser aberto com antecedência.
 
 <!-- Novas decisões: adicionar abaixo, numeração sequencial -->
