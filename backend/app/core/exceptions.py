@@ -93,3 +93,38 @@ class DatabaseUnavailableError(DomainError):
 
     code = "DATABASE_UNAVAILABLE"
     message = "Banco de dados indisponível"
+
+
+class QuotaExceededError(DomainError):
+    """O arquivo não cabe na cota do usuário (ADR-022). O service informa o espaço livre."""
+
+    code = "QUOTA_EXCEEDED"
+    message = "Cota de armazenamento excedida"
+
+
+class FileTooLargeError(DomainError):
+    """O arquivo passa do limite por arquivo (`MAX_UPLOAD_BYTES`)."""
+
+    code = "FILE_TOO_LARGE"
+    message = "O arquivo passa do tamanho máximo permitido"
+
+
+class UnsupportedFileError(DomainError):
+    """Tipo não aceito, ou conteúdo (magic bytes) diferente do tipo declarado."""
+
+    code = "UNSUPPORTED_FILE"
+    message = "Tipo de arquivo não suportado"
+
+
+class UploadNotPendingError(DomainError):
+    """`complete` de um arquivo que não está mais aguardando o envio."""
+
+    code = "UPLOAD_NOT_PENDING"
+    message = "Este upload já foi concluído ou cancelado"
+
+
+class UploadMissingError(DomainError):
+    """`complete` chamado sem o arquivo ter chegado ao storage."""
+
+    code = "UPLOAD_MISSING"
+    message = "O arquivo ainda não foi enviado"

@@ -15,12 +15,17 @@ from app.core.exceptions import (
     DatabaseUnavailableError,
     DomainError,
     EmailAlreadyExistsError,
+    FileTooLargeError,
     InvalidCredentialsError,
     InvalidCsrfTokenError,
     InvalidImageError,
     InvalidPasswordError,
     InvalidTokenError,
     NotFoundError,
+    QuotaExceededError,
+    UnsupportedFileError,
+    UploadMissingError,
+    UploadNotPendingError,
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
@@ -43,6 +48,11 @@ DOMAIN_ERROR_STATUS: dict[type[DomainError], int] = {
     InvalidImageError: 422,
     NotFoundError: 404,
     DatabaseUnavailableError: 503,
+    QuotaExceededError: 413,
+    FileTooLargeError: 422,
+    UnsupportedFileError: 422,
+    UploadNotPendingError: 409,
+    UploadMissingError: 409,
 }
 DEFAULT_DOMAIN_ERROR_STATUS = 400
 INTERNAL_ERROR_DETAIL = "Erro interno do servidor"
