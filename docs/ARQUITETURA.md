@@ -1657,7 +1657,7 @@ Por que não escalar pela CPU: um único job de FFmpeg já leva a CPU a 100% e c
 
 ### 9.1 Containers
 
-**Imagens (planejado, #65):** o workflow `.github/workflows/images.yml` constrói e publica no GHCR, a cada push na `main`, três imagens com a tag = **SHA do commit** (nunca `latest`, ADR-025):
+**Imagens (planejado, #65):** o workflow `.github/workflows/images.yml` constrói e publica no GHCR, a cada push na `main` e na `dev` (ADR-031), três imagens com a tag = **SHA do commit** (nunca `latest`, ADR-025):
 
 | Imagem | Origem | Conteúdo |
 |---|---|---|
@@ -1684,13 +1684,13 @@ Detalhes no [report 07](aws/report_07_deploy.md) (ADR-015). Na `proto1-app`, pel
 
 ### 9.3 Walking skeleton da sprint 2 (planejado, #83–#85)
 
-Assim que existirem o ALB (#83), a CloudFront final (#84) e o ASG do app (#85), a `main` do momento (ainda sem as funcionalidades da sprint 2) é servida por CloudFront → ALB → ASG, com as imagens publicadas pela #65. Isso valida cedo rede, SGs, roles, Parameter Store, GHCR, health check e cookie/CSRF no domínio novo. Daí em diante, cada merge de `dev` na `main` vai para produção pelo fluxo da seção 9.4.
+Assim que existirem o ALB (#83), a CloudFront final (#84) e o ASG do app (#85), a `main` do momento (ainda sem as funcionalidades da sprint 2) é servida por CloudFront → ALB → ASG, com as imagens publicadas pela #65. Isso valida cedo rede, SGs, roles, Parameter Store, GHCR, health check e cookie/CSRF no domínio novo. Daí em diante, o ambiente roda commits da `dev` para testes de integração e, depois do freeze, só da `main` (seção 9.4).
 
 ### 9.4 Deploy da sprint 2: imagens no GHCR + instance refresh (planejado, #87)
 
 Detalhes no [report 18](aws/report_18_deploy_proto2.md) (ADR-025).
 
-1. Merge do PR `dev → main` → CI verde → `images.yml` publica `api`, `worker` e `web` com a tag = SHA.
+1. Push na `dev` ou na `main` → CI verde → `images.yml` publica `api`, `worker` e `web` com a tag = SHA.
 2. No CloudShell: `IMAGE_TAG=<sha> bash infra/scripts/18_deploy.sh`, que:
    1. grava `/proto2/prod/IMAGE_TAG`;
    2. dispara `aws autoscaling start-instance-refresh` em `proto2-asg-app` (`MinHealthyPercentage=100`, `MaxHealthyPercentage=200`: sobe a instância nova antes de tirar a antiga) e em `proto2-asg-worker` (se houver instâncias);
@@ -1700,6 +1700,12 @@ Detalhes no [report 18](aws/report_18_deploy_proto2.md) (ADR-025).
 5. Smoke test: `curl -s https://<dist>.cloudfront.net/api/health` → `{"status":"ok","db":"ok"}` e um upload pela interface.
 
 Instâncias criadas por scale-out leem o mesmo `IMAGE_TAG`, então o grupo inteiro roda sempre a mesma versão. **Rollback:** rodar o `18_deploy.sh` com o SHA anterior (desde que a migração do meio seja compatível, por isso o *expand/contract* da seção 5.9).
+
+**Qual commit roda na AWS (ADR-031):** há um só ambiente; o que está no ar é o SHA gravado em `IMAGE_TAG`.
+
+- **Até o feature freeze (05/12):** pode rodar commits da `dev`, para testar a integração com CloudFront, ALB, S3, SQS e workers. Quem implanta avisa a equipe.
+- **Depois do freeze:** só commits da `main` (apresentação, teste de carga e validação).
+- **Migrações:** um SHA que já aplicou migração no RDS não pode ser trocado por um SHA mais antigo, que não conhece a revisão nova (o Alembic falha na subida). Por isso, depois de implantar a `dev`, só se volta a implantar a `main` quando ela já contém esse commit, ou seja, depois do PR `dev → main`.
 
 ### 9.5 Cutover da `proto1-app` (planejado, #87)
 
@@ -1905,7 +1911,7 @@ O roteiro da apresentação e a tabela de contribuições ficam em [`apresentaca
 - **Modelo (sprint 2, ADR-031):** duas branches protegidas, as duas só recebem PR e as regras valem também para administradores.
   - `dev`: branch padrão do repositório. Recebe os PRs das issues, com **1 aprovação** de outro integrante.
   - `main`: o que está em produção. Só recebe PRs `dev → main`, abertos quando a equipe decide publicar (fim de marco, feature freeze), com **4 aprovações** (todos menos o autor). Correção urgente também passa pela `dev`.
-  - O CI roda em todo PR e em todo push na `dev` e na `main`; não mergear com CI vermelho é um combinado da equipe.
+  - O CI roda em todo PR e em todo push na `dev` e na `main`. Os jobs **Backend** e **Frontend** são *required checks* das duas branches: PR com CI vermelho não pode ser mergeado.
   - Na sprint 1 o modelo era GitHub Flow, só com a `main` e 1 aprovação.
 - **Branches:** `<tipo>/<n-issue>-<descricao-curta>`, ex.: `feat/69-upload`, `infra/83-alb`, `docs/90-readme`.
 - **Commits:** Conventional Commits em português: `feat`, `fix`, `test`, `refactor`, `docs`, `chore`, `ci`, `infra`, `deploy`. Escopo opcional: `feat(files): ...`. A mensagem cita a issue (`(#n)` no título ou `Refs #n` no corpo).
@@ -2000,7 +2006,6 @@ Continuam fora do escopo:
 - Substituir o conteúdo de um arquivo mantendo o registro (RF-2.4 interpretado como edição de metadados, ADR-029).
 - Itens da lista de corte, se não entrarem: reprocessar arquivo com falha, capa embutida dos áudios, visualização em lista, autocomplete de tags.
 - Refresh token; recuperação de senha por email (SES); papéis/admin.
-- Jobs do CI como *required checks* da `main`.
 - Remover o `UploadFile` do `user_service.update_avatar` (ADR-016; os services novos já seguem o ADR-030).
 
 ---
@@ -2110,6 +2115,6 @@ Nota (sprint 2): encerrado para o código novo pelo ADR-030.
 *Contexto:* o ADR-016 aceitou `fastapi.UploadFile` nos services do avatar. Na sprint 2 o arquivo de mídia não passa mais pela API (ADR-022), e o worker não tem `UploadFile` nenhum. *Decisão:* os services e a interface de storage da sprint 2 recebem `BinaryIO` (avatar) ou caminhos de arquivo local (processamento); `UploadFile` fica restrito ao controller. O avatar passa a usar `upload_fileobj` no storage v2 (#67). *Consequências:* services sem dependência do FastAPI, reutilizados pela API e pelo worker; o `user_service.update_avatar` ainda recebe `UploadFile` até ser ajustado (seção 14).
 
 **ADR-031 — Branch `dev` para integração e `main` para produção (issue #62)** | 2026-11-25 | Aceita (substitui, para a sprint 2, o GitHub Flow da seção 11)
-*Contexto:* na sprint 2 todo merge na `main` publica imagens no GHCR e pode ir para produção por instance refresh (ADR-025); com 30 issues integrando em paralelo, um merge quebrado afetaria a versão da apresentação. O professor sugeriu uma branch de desenvolvimento. *Decisão:* `dev` vira a branch padrão e recebe os PRs das issues com 1 aprovação; a `main` só recebe PRs `dev → main`, com 4 aprovações (todos menos o autor). `dev` é a padrão para que `Closes #n` feche a issue no merge e os PRs já abram contra ela. *Consequências:* deploy só quando a equipe decide; o merge commit `dev → main` preserva a autoria (ADR-003); uma publicação depende de todos aprovarem, então o PR `dev → main` deve ser aberto com antecedência.
+*Contexto:* na sprint 2 todo merge na `main` publica imagens no GHCR e pode ir para produção por instance refresh (ADR-025); com 30 issues integrando em paralelo, um merge quebrado afetaria a versão da apresentação. O professor sugeriu uma branch de desenvolvimento. *Decisão:* `dev` vira a branch padrão e recebe os PRs das issues com 1 aprovação; a `main` só recebe PRs `dev → main`, com 4 aprovações (todos menos o autor). `dev` é a padrão para que `Closes #n` feche a issue no merge e os PRs já abram contra ela. As imagens são publicadas nos pushes das duas branches, e o ambiente único da AWS pode rodar commits da `dev` até o feature freeze para testes de integração; depois dele, só da `main` (seção 9.4). Um ambiente de homologação separado duplicaria ALB, ASG e CloudFront e não cabe no orçamento. *Consequências:* produção só muda quando alguém roda o deploy; o merge commit `dev → main` preserva a autoria (ADR-003); uma publicação na `main` depende de todos aprovarem, então o PR `dev → main` deve ser aberto com antecedência; depois de implantar um commit da `dev` com migração, a `main` só volta ao ar após receber esse commit. Custo extra desprezível: o GHCR e o Actions são gratuitos para repositório público, e cada deploy só mantém uma instância a mais durante o refresh.
 
 <!-- Novas decisões: adicionar abaixo, numeração sequencial -->
