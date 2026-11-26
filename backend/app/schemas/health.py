@@ -10,3 +10,11 @@ class HealthRead(BaseModel):
 
     status: Literal["ok"]
     db: Literal["ok"]
+
+
+class HealthLiveRead(BaseModel):
+    """Resposta do health check do ALB: só diz que o processo da API responde."""
+
+    model_config = ConfigDict(json_schema_extra={"examples": [{"status": "ok"}]})
+
+    status: Literal["ok"]
