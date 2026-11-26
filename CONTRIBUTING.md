@@ -30,7 +30,7 @@ Nunca faça push direto na `dev` ou na `main`, `push --force` ou squash.
 ### Branches `dev` e `main` (sprint 2, ADR-031)
 
 - **`dev`** é a branch padrão: todo PR de issue vai para ela, com 1 aprovação.
-- **`main`** é o que está em produção. Só recebe PR `dev → main`, quando a equipe decide publicar (fim de marco, feature freeze). Esse PR precisa da aprovação dos **outros 4 membros**, então abra com antecedência.
+- **`main`** é o que está em produção. Só recebe PR `dev → main`, quando a equipe decide publicar (fim de marco, feature freeze). Esse PR precisa de **2 aprovações** (com o autor, maioria da equipe: 3 de 5).
 - Correção urgente também passa pela `dev`, e depois vai para a `main` num PR `dev → main`.
 
 ## 3. Nomes de branch e commits
