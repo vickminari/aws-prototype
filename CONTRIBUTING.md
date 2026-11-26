@@ -54,8 +54,22 @@ A sequência de commits é avaliada:
 
 - Entregue **report + script + prints**, seguindo [`docs/aws/TEMPLATE_report.md`](docs/aws/TEMPLATE_report.md).
 - Use o seu próprio login (convite da página Equipe da AWS) e rode os comandos no **CloudShell** (ícone `>_`). Não crie IAM users nem access keys.
-- Região **`us-east-2`**. Prefixo `proto1-` e tags `Project=proto1` e `Owner=<seu nome>` em todo recurso.
+- Região **`us-east-2`**. Todo recurso leva as tags `Project` e `Owner=<seu nome>`.
 - **Mexa só nos recursos da sua frente.**
+
+### Tags na sprint 2 (ADR-019)
+
+O nome e a tag `Project` dizem em que sprint o recurso foi criado ou mudou ([ARQUITETURA §8.1](docs/ARQUITETURA.md#81-convenções)):
+
+| Situação do recurso | Nome | Tags |
+|---|---|---|
+| Novo na sprint 2 | prefixo `proto2-` | `Project=proto2`, `Owner=<seu nome>` |
+| Modificado na sprint 2 | mantém o nome original | `Project=proto2`, `PreviousProject=proto1`, `Owner=<seu nome>` |
+| Intocado | não muda | continua `Project=proto1` |
+
+- "Modificado" é mudar a configuração do próprio recurso (ex.: regra nova no `proto1-sg-db`). Só usar um recurso existente, como as subnets públicas, não conta.
+- Os scripts novos fazem `export PROJECT=proto2` antes de `source 00_env.sh`. Para um recurso modificado, use `retag_as_proto2` do `lib.sh` (#63).
+- A seção 6 do report lista as tags de cada recurso criado ou modificado.
 
 ## 7. Registro do trabalho
 
@@ -66,3 +80,31 @@ Não há diário de bordo separado (ADR-017 em [`docs/ARQUITETURA.md`](docs/ARQU
 - **Report** da AWS com o seu nome e a data no cabeçalho.
 
 O roteiro da apresentação e a tabela de contribuições de cada membro ficam em [`docs/apresentacao/roteiro.md`](docs/apresentacao/roteiro.md) (#27).
+
+## 8. Sprint 2: milestones, labels e reports
+
+O backlog da sprint 2 são as issues #62 a #91, mais a #26 (teardown de proto1 + proto2). Cada issue diz de quais outras depende; comece pelas que não têm dependência aberta. Requisitos em [`docs/REQUISITOS.md`](docs/REQUISITOS.md).
+
+| Milestone | Período | Issues |
+|---|---|---|
+| M4 — Fundação da sprint 2 | 26–27/11 | #62–#66 |
+| M5 — Mídia, processamento e infraestrutura | 27/11–03/12 | #67–#84 |
+| M6 — Escala e deploy | 01–05/12 (feature freeze no fim de 05/12) | #85–#87 |
+| M7 — Entrega da sprint 2 | 06–09/12 | #88–#91 e #26 |
+
+Labels novas: `worker` (worker e processamento de mídia: fila, ffmpeg) e `performance` (teste de carga e escala).
+
+| Report | Tema | Issue |
+|---|---|---|
+| 09 | Plano gratuito, créditos e orçamento da sprint 2 | #63 |
+| 10 | Bucket de mídia proto2 (CORS e lifecycle) | #79 |
+| 11 | Fila SQS de processamento e DLQ | #80 |
+| 12 | Roles da aplicação e do worker e parâmetros `/proto2` | #81 |
+| 13 | Security groups da sprint 2 e acesso ao RDS | #82 |
+| 14 | Application Load Balancer e target group | #83 |
+| 15 | CloudFront com HTTPS | #84 |
+| 16 | Launch template e Auto Scaling da aplicação | #85 |
+| 17 | Auto Scaling dos workers pela fila | #86 |
+| 18 | Deploy por instance refresh e cutover da proto1 | #87 |
+
+O report 08 (teardown) continua na #26 e só é executado depois da nota.
