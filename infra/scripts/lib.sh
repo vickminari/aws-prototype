@@ -45,3 +45,33 @@ save_output() {
   export "${key}=${value}"
   printf '    %s=%s\n' "${key}" "${value}"
 }
+
+# Marca um recurso da sprint 1 que foi modificado na sprint 2 (ADR-019):
+# aplica Project=proto2, PreviousProject=proto1 e Owner=<quem modificou>.
+# O Name não muda. Recursos de EC2/VPC recebem o ID; os demais, o ARN.
+# Ex.: retag_as_proto2 sg-035eab28e4158d2d8
+#      retag_as_proto2 arn:aws:rds:us-east-2:123456789012:db:proto1-db
+retag_as_proto2() {
+  local resource="$1"
+  [ -n "${resource}" ] || fail "retag_as_proto2: informe o ID ou o ARN do recurso"
+  [ -n "${OWNER}" ] || fail "Defina o responsável antes: export OWNER=SeuNome"
+
+  case "${resource}" in
+    arn:*)
+      local failed
+      failed="$(aws resourcegroupstaggingapi tag-resources \
+        --resource-arn-list "${resource}" \
+        --tags "Project=proto2,PreviousProject=proto1,Owner=${OWNER}" \
+        --query 'length(FailedResourcesMap)' --output text)" \
+        || fail "Não foi possível marcar ${resource}"
+      # A API responde com sucesso mesmo quando o recurso falha; confere o mapa.
+      [ "${failed}" = "0" ] || fail "A AWS recusou as tags em ${resource}"
+      ;;
+    *)
+      aws ec2 create-tags --resources "${resource}" \
+        --tags Key=Project,Value=proto2 Key=PreviousProject,Value=proto1 "Key=Owner,Value=${OWNER}" \
+        || fail "Não foi possível marcar ${resource}"
+      ;;
+  esac
+  log "${resource} marcado como Project=proto2 (PreviousProject=proto1)"
+}
