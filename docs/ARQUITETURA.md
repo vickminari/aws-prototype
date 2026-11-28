@@ -615,11 +615,11 @@ A API não renderiza HTML; por isso a **View** do backend é a camada de **schem
 | `InvalidImageError` (avatar: tipo/tamanho) | `INVALID_IMAGE` | 422 |
 | `NotFoundError` (inclusive arquivo de **outro** usuário, ADR-029) | `NOT_FOUND` | 404 |
 | `DatabaseUnavailableError` (health com banco fora, ADR-009) | `DATABASE_UNAVAILABLE` | 503 |
-| `QuotaExceededError` (planejado, #64) | `QUOTA_EXCEEDED` | 413 |
-| `FileTooLargeError` (acima de `MAX_UPLOAD_BYTES`, planejado, #64) | `FILE_TOO_LARGE` | 422 |
-| `UnsupportedFileError` (tipo declarado não aceito ou magic bytes diferentes, planejado, #64) | `UNSUPPORTED_FILE` | 422 |
-| `UploadNotPendingError` (`complete` de arquivo que não está `pending_upload`, planejado, #64) | `UPLOAD_NOT_PENDING` | 409 |
-| `UploadMissingError` (`complete` sem o objeto no S3, planejado, #64) | `UPLOAD_MISSING` | 409 |
+| `QuotaExceededError` | `QUOTA_EXCEEDED` | 413 |
+| `FileTooLargeError` (acima de `MAX_UPLOAD_BYTES`) | `FILE_TOO_LARGE` | 422 |
+| `UnsupportedFileError` (tipo declarado não aceito ou magic bytes diferentes) | `UNSUPPORTED_FILE` | 422 |
+| `UploadNotPendingError` (`complete` de arquivo que não está `pending_upload`) | `UPLOAD_NOT_PENDING` | 409 |
+| `UploadMissingError` (`complete` sem o objeto no S3) | `UPLOAD_MISSING` | 409 |
 
 Os códigos acima são os que o frontend usa para mostrar a mensagem certa. Formato padrão de erro: `{"detail": "mensagem legível", "code": "QUOTA_EXCEEDED"}`. Todo 401 traz `WWW-Authenticate: Cookie realm="api"` (ADR-010).
 
@@ -674,7 +674,7 @@ erDiagram
 | `profile_image_key` | `String(512)` | opcional; chave do objeto no S3 (não a URL) |
 | `description` | `String(500)` | opcional |
 | `is_active` | `Boolean` | default `true` |
-| `storage_used_bytes` | `BigInteger` | **(planejado, #64)** default 0, nunca negativo; soma dos originais (inclui reservas de uploads em andamento); a imagem de perfil não entra |
+| `storage_used_bytes` | `BigInteger` | default 0, nunca negativo (CHECK); soma dos originais (inclui reservas de uploads em andamento); a imagem de perfil não entra |
 | `created_at` | `DateTime(timezone=True)` | default `now()` UTC; imutável |
 | `updated_at` | `DateTime(timezone=True)` | atualizado a cada alteração |
 
@@ -687,7 +687,7 @@ erDiagram
 | `expires_at` | `DateTime(timezone=True)` | expiração original do token |
 | `revoked_at` | `DateTime(timezone=True)` | default `now()` |
 
-**Tabela `media_objects`** (planejado, #64): um registro por arquivo enviado.
+**Tabela `media_objects`** (#64): um registro por arquivo enviado.
 
 | Coluna | Tipo | Regras |
 |---|---|---|
@@ -713,7 +713,7 @@ erDiagram
 
 Índices: `(owner_id, media_type, created_at)` para a listagem e `(owner_id, status)` para a limpeza de uploads abandonados.
 
-**Tabela `image_metadata`** (planejado, #64/#68), 1:1 com `media_objects` (`media_id` é PK e FK)
+**Tabela `image_metadata`** (#64; preenchida pela #68), 1:1 com `media_objects` (`media_id` é PK e FK)
 
 | Coluna | Tipo | Observação |
 |---|---|---|
@@ -730,7 +730,7 @@ erDiagram
 | `iso` | `Integer` | |
 | `gps_lat`, `gps_lon` | `Float` | convertidos de graus/minutos/segundos para decimal; visíveis só para o dono |
 
-**Tabela `video_metadata`** (planejado, #64/#73), 1:1
+**Tabela `video_metadata`** (#64; preenchida pela #73), 1:1
 
 | Coluna | Tipo | Observação |
 |---|---|---|
@@ -742,7 +742,7 @@ erDiagram
 | `bitrate` | `Integer` | bits por segundo (áudio + vídeo) |
 | `container` | `String(30)` | `format_name` do ffprobe |
 
-**Tabela `audio_metadata`** (planejado, #64/#74), 1:1
+**Tabela `audio_metadata`** (#64; preenchida pela #74), 1:1
 
 | Coluna | Tipo | Observação |
 |---|---|---|
@@ -752,7 +752,7 @@ erDiagram
 | `channels` | `Integer` | 1 = mono, 2 = estéreo |
 | `codec` | `String(30)` | `mp3`, `pcm_s16le`, `vorbis`, `flac`, ... |
 
-**Tabela `media_variants`** (planejado, #64/#73): versões de vídeo.
+**Tabela `media_variants`** (#64; preenchida pela #73): versões de vídeo.
 
 | Coluna | Tipo | Observação |
 |---|---|---|
@@ -766,7 +766,7 @@ erDiagram
 
 Restrição: `UNIQUE(media_id, label)`, para o worker poder repetir um job sem duplicar versões.
 
-**Tabelas `tags` e `media_tags`** (planejado, #64/#70)
+**Tabelas `tags` e `media_tags`** (#64; usadas pela #70)
 
 | Tabela | Colunas | Regras |
 |---|---|---|
@@ -782,7 +782,7 @@ Toda escrita (`POST`, `PUT`, `PATCH`, `DELETE`), inclusive cadastro e login, exi
 | Método | Rota | Auth | Entrada | Saída | Códigos |
 |---|---|---|---|---|---|
 | GET | `/api/health` | não | — | `{"status":"ok","db":"ok"}` | 200, 503 |
-| GET | `/api/health/live` | não | — | `{"status":"ok"}` (não consulta o banco; usado pelo ALB, ADR-027) **(planejado, #64)** | 200 |
+| GET | `/api/health/live` | não | — | `{"status":"ok"}` (não consulta o banco; usado pelo ALB, ADR-027) | 200 |
 | GET | `/api/auth/csrf` | não | — | `CsrfRead` + cookie de pré-sessão | 200 |
 | POST | `/api/auth/register` | não | `UserCreate` (JSON) | `UserRead` | 201, 403, 409, 422 |
 | POST | `/api/auth/login` | não | form `username` + `password` | `{"detail": "Login realizado"}` + `Set-Cookie` | 200, 401, 403, 422 |
@@ -806,7 +806,7 @@ Toda escrita (`POST`, `PUT`, `PATCH`, `DELETE`), inclusive cadastro e login, exi
 **Schemas (View):**
 
 - `UserCreate`, `UserUpdate`, `UserRead`, `UserProfileRead`, `CsrfRead`, `LoginResponse`, `PasswordChange`: como na sprint 1 (ver `docs/DECISAO_AUTENTICACAO.md` e o Swagger).
-- `UploadInit` (planejado, #64): `filename` (1–255), `size_bytes` (1 a `MAX_UPLOAD_BYTES`), `content_type` (um dos tipos aceitos, seção 5.11).
+- `UploadInit` (`schemas/file.py`, #64): `filename` (1–255), `size_bytes` (1 a `MAX_UPLOAD_BYTES`), `content_type` (um dos tipos aceitos, seção 5.11).
 - `UploadTicket`: `file_id`, `upload` (`url` + `fields`, o formulário que o navegador envia ao S3), `expires_in` (segundos).
 - `FileSummary`: `id`, `name`, `media_type`, `mime_type`, `size_bytes`, `status`, `thumbnail_url` (pré-assinada ou `null`), `duration_seconds` (vídeo/áudio), `tags`, `created_at`.
 - `FileDetail`: `FileSummary` + `original_filename`, `description`, `genre`, `error_code`, `updated_at`, `processed_at`, `view_url` (inline), `download_url` (attachment, com o nome original), `image` \| `video` \| `audio` (metadados do tipo, os outros `null`), `variants` (lista de `VariantRead`), `default_variant` (rótulo da maior versão ≤ 1080 ou `null`).
@@ -875,16 +875,16 @@ Contrato completo em [`docs/DECISAO_AUTENTICACAO.md`](DECISAO_AUTENTICACAO.md) (
 | `CORS_ORIGINS` | `http://localhost:5173` | vazio (mesma origem) |
 | `LOG_LEVEL` | `DEBUG` | `INFO` |
 | `PUBLIC_HOST` | — | só na sprint 1 (`deploy.sh` da `proto1-app`); sai na sprint 2 |
-| `USER_QUOTA_BYTES` | `104857600` | `104857600` (100 MB) **(planejado, #64)** |
-| `MAX_UPLOAD_BYTES` | `104857600` | `104857600` (limite por arquivo) **(planejado, #64)** |
-| `UPLOAD_URL_EXPIRE_SECONDS` | `900` | `900` (validade do POST pré-assinado) **(planejado, #64)** |
-| `PENDING_UPLOAD_TTL_MINUTES` | `60` | `60` (depois disso o upload não concluído é liberado) **(planejado, #64)** |
+| `USER_QUOTA_BYTES` | `104857600` | `104857600` (100 MB) |
+| `MAX_UPLOAD_BYTES` | `104857600` | `104857600` (limite por arquivo) |
+| `UPLOAD_URL_EXPIRE_SECONDS` | `900` | `900` (validade do POST pré-assinado) |
+| `PENDING_UPLOAD_TTL_MINUTES` | `60` | `60` (depois disso o upload não concluído é liberado) |
 | `QUEUE_BACKEND` | `memory` (testes) ou `sqs` (compose de dev, com ElasticMQ) | `sqs` **(planejado, #71)** |
 | `SQS_QUEUE_URL` | `http://elasticmq:9324/000000000000/proto2-media-jobs` | URL da `proto2-media-jobs` (SSM) **(planejado, #71)** |
 | `AWS_ENDPOINT_URL` | `http://elasticmq:9324` (só o SQS do dev) | não definida **(planejado, #71)** |
-| `RUN_MIGRATIONS` | `1` | `1` no app, `0` no worker **(planejado, #64)** |
-| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `3` / `2` | `3` / `2` (o `db.t4g.micro` aceita ~80 conexões) **(planejado, #64)** |
-| `VIDEO_MAX_DURATION_SECONDS` | `600` | `600` **(planejado, #64)** |
+| `RUN_MIGRATIONS` | `1` | `1` no app, `0` no worker |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `3` / `2` | `3` / `2` (o `db.t4g.micro` aceita ~80 conexões) |
+| `VIDEO_MAX_DURATION_SECONDS` | `600` | `600` |
 | `IMAGE_TAG` | — | SHA do commit; lido só pelos compose de produção para escolher a imagem do GHCR **(planejado, #87)** |
 
 `.env` **nunca** é commitado; `.env.example` sim. Na sprint 2 o `.env` das instâncias é gerado pelo `infra/ec2/load-env.sh` a partir de `/proto2/prod/` (`PARAM_PATH`, seção 8.14), no boot de cada instância.
@@ -892,7 +892,7 @@ Contrato completo em [`docs/DECISAO_AUTENTICACAO.md`](DECISAO_AUTENTICACAO.md) (
 ### 5.9 Outros padrões
 
 - **Migrações:** toda mudança de modelo gera migração Alembic (`alembic revision --autogenerate -m "..."`), revisada à mão. O container do app roda `alembic upgrade head` ao iniciar se `RUN_MIGRATIONS=1`; o worker usa `RUN_MIGRATIONS=0`.
-- **Várias instâncias (planejado, #64, ADR-027):** o `alembic/env.py` pega um `pg_advisory_lock` antes de migrar (ignorado no SQLite), para duas instâncias subindo juntas não aplicarem a mesma migração. As migrações seguem o padrão *expand/contract*: durante o instance refresh, a versão antiga e a nova convivem, então uma migração nunca remove nem renomeia coluna que a versão anterior ainda usa.
+- **Várias instâncias (#64, ADR-027):** o `alembic/env.py` pega um `pg_advisory_lock` antes de migrar (ignorado no SQLite), para duas instâncias subindo juntas não aplicarem a mesma migração. As migrações seguem o padrão *expand/contract*: durante o instance refresh, a versão antiga e a nova convivem, então uma migração nunca remove nem renomeia coluna que a versão anterior ainda usa.
 - **Logs:** módulo `logging` em texto simples, nível pela env. Nunca logar senha, token, hash, URL pré-assinada nem o conteúdo de `fields` do upload. Na sprint 2 os logs dos containers vão para o CloudWatch Logs (seção 8.19).
 - Datas sempre em UTC no banco; o frontend formata para `America/Fortaleza`.
 - Estilo: `ruff check` e `ruff format` sem erros (o CI bloqueia).
@@ -977,7 +977,7 @@ O `+faststart` põe o índice do MP4 no início do arquivo: o `<video>` começa 
 
 **Chamadas ao FFmpeg** (`processing/ffmpeg.py`): `subprocess.run` com lista de argumentos (nunca `shell=True`), timeout (ffprobe 30 s; transcodificação 900 s), stderr capturado e resumido no log, entrada lida só do diretório temporário do job.
 
-### 5.12 Cota de armazenamento (planejado, #64 e #69, ADR-022)
+### 5.12 Cota de armazenamento (#64; uso no upload planejado, #69, ADR-022)
 
 - **Limite:** `USER_QUOTA_BYTES` = 104 857 600 bytes (100 MB) por usuário. Cada arquivo também respeita `MAX_UPLOAD_BYTES` (100 MB).
 - **O que conta:** só o **original** enviado. Miniaturas, versões de vídeo e a imagem de perfil não contam.
@@ -1029,7 +1029,7 @@ O fluxo completo em produção é validado manualmente na #89 (`docs/checklist_v
 ### 6.3 Infraestrutura de testes
 
 - `tests/conftest.py` com as fixtures da sprint 1: `engine` (SQLite em memória com `StaticPool`, recriado a cada teste, ADR-009), `db_session`, `app`, `client`, `csrf_client`, `user_factory`, `logged_user`/`logged_client` e `auth_user`.
-- Fixtures novas (planejado, #64, #67, #71): `local_storage` (em `tmp_path`), `memory_queue`, `media_factory` (cria `MediaObject` com metadados) e `other_user` (para os testes de isolamento). Nenhuma mídia grande é commitada: as amostras são geradas pelos próprios testes.
+- Fixtures novas: `media_factory` (#64, cria `MediaObject` com metadados); planejadas: `local_storage` (em `tmp_path`, #67), `memory_queue` (#71) e `other_user` (para os testes de isolamento). Nenhuma mídia grande é commitada: as amostras são geradas pelos próprios testes.
 - Nomes: `test_<acao>_<cenario>_<resultado esperado>`, ex.: `test_start_upload_over_quota_returns_413`.
 - Cobertura mínima: **70%** no backend (`pytest --cov=app --cov-fail-under=70`), mantida na sprint 2.
 - CI (`.github/workflows/ci.yml`): **Backend** (`ruff check`, `ruff format --check`, `pytest` com cobertura; FFmpeg instalado por `apt` a partir da #73) e **Frontend** (ESLint, Prettier, Vitest, `tsc` + build). PR com CI vermelho não é mergeado.

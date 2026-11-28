@@ -81,3 +81,55 @@ def test_prod_with_strong_jwt_secret_is_valid():
     )
 
     assert settings.environment == "prod"
+
+
+def test_settings_sprint2_defaults_follow_architecture(monkeypatch):
+    for name in ("USER_QUOTA_BYTES", "MAX_UPLOAD_BYTES", "QUEUE_BACKEND", "RUN_MIGRATIONS"):
+        monkeypatch.delenv(name, raising=False)
+
+    settings = Settings(_env_file=None)
+
+    assert settings.user_quota_bytes == 104_857_600
+    assert settings.max_upload_bytes == 104_857_600
+    assert settings.upload_url_expire_seconds == 900
+    assert settings.pending_upload_ttl_minutes == 60
+    assert settings.queue_backend == "memory"
+    assert settings.sqs_queue_url is None
+    assert settings.aws_endpoint_url is None
+    assert settings.run_migrations is True
+    assert (settings.db_pool_size, settings.db_max_overflow) == (3, 2)
+    assert settings.video_max_duration_seconds == 600
+
+
+def test_settings_reads_sprint2_values_from_env(monkeypatch):
+    monkeypatch.setenv("RUN_MIGRATIONS", "0")
+    monkeypatch.setenv("USER_QUOTA_BYTES", "1048576")
+    monkeypatch.setenv("QUEUE_BACKEND", "sqs")
+    monkeypatch.setenv("SQS_QUEUE_URL", "http://elasticmq:9324/000000000000/proto2-media-jobs")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.run_migrations is False
+    assert settings.user_quota_bytes == 1_048_576
+    assert settings.queue_backend == "sqs"
+
+
+def test_settings_sqs_queue_without_url_raises():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, queue_backend="sqs")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "user_quota_bytes",
+        "max_upload_bytes",
+        "upload_url_expire_seconds",
+        "pending_upload_ttl_minutes",
+        "db_pool_size",
+        "video_max_duration_seconds",
+    ],
+)
+def test_settings_rejects_non_positive_sprint2_limits(field):
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, **{field: 0})

@@ -27,3 +27,13 @@ def test_health_with_database_unavailable_returns_503(app, client):
         "detail": "Banco de dados indisponível",
         "code": "DATABASE_UNAVAILABLE",
     }
+
+
+def test_health_live_returns_200_with_database_unavailable(app, client):
+    """Health check do ALB (ADR-027): não pode depender do banco."""
+    app.dependency_overrides[get_db] = lambda: UnavailableSession()
+
+    response = client.get("/api/health/live")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}

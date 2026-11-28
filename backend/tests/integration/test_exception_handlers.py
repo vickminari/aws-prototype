@@ -5,10 +5,15 @@ from fastapi.testclient import TestClient
 from app.core.exceptions import (
     DomainError,
     EmailAlreadyExistsError,
+    FileTooLargeError,
     InvalidCredentialsError,
     InvalidImageError,
     InvalidTokenError,
     NotFoundError,
+    QuotaExceededError,
+    UnsupportedFileError,
+    UploadMissingError,
+    UploadNotPendingError,
     UsernameAlreadyExistsError,
     WrongPasswordError,
 )
@@ -36,6 +41,11 @@ def _app_raising(exc: Exception) -> FastAPI:
         (WrongPasswordError, 400, "WRONG_PASSWORD"),
         (InvalidImageError, 422, "INVALID_IMAGE"),
         (NotFoundError, 404, "NOT_FOUND"),
+        (QuotaExceededError, 413, "QUOTA_EXCEEDED"),
+        (FileTooLargeError, 422, "FILE_TOO_LARGE"),
+        (UnsupportedFileError, 422, "UNSUPPORTED_FILE"),
+        (UploadNotPendingError, 409, "UPLOAD_NOT_PENDING"),
+        (UploadMissingError, 409, "UPLOAD_MISSING"),
     ],
 )
 def test_domain_error_returns_mapped_status_and_code(exc_class, status_code, code):

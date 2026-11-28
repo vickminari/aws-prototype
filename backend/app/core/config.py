@@ -41,6 +41,21 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = []
     log_level: str = "INFO"
 
+    # Sprint 2 (ARQ §5.8, §5.12): cota, upload, fila, pool do banco e limites de mídia
+    user_quota_bytes: int = Field(default=104_857_600, gt=0)
+    max_upload_bytes: int = Field(default=104_857_600, gt=0)
+    upload_url_expire_seconds: int = Field(default=900, gt=0)
+    pending_upload_ttl_minutes: int = Field(default=60, gt=0)
+    queue_backend: Literal["memory", "sqs"] = "memory"
+    sqs_queue_url: str | None = None
+    # Só no dev, para o boto3 falar com o ElasticMQ; em produção fica sem valor
+    aws_endpoint_url: str | None = None
+    # Lido também pelo entrypoint.sh: o worker usa 0 e não aplica migrações (ADR-027)
+    run_migrations: bool = True
+    db_pool_size: int = Field(default=3, gt=0)
+    db_max_overflow: int = Field(default=2, ge=0)
+    video_max_duration_seconds: int = Field(default=600, gt=0)
+
     @field_validator("cors_origins", "csrf_trusted_origins", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:
@@ -71,7 +86,8 @@ class Settings(BaseSettings):
 
         Raises:
             ValueError: se em produção o `JWT_SECRET` for o padrão de dev ou curto demais,
-                se CSRF estiver inseguro/incompleto, ou se `STORAGE_BACKEND=s3` sem `S3_BUCKET`.
+                se CSRF estiver inseguro/incompleto, se `STORAGE_BACKEND=s3` sem `S3_BUCKET`
+                ou se `QUEUE_BACKEND=sqs` sem `SQS_QUEUE_URL`.
         """
         if self.environment == "dev" and not self.csrf_trusted_origins:
             self.csrf_trusted_origins = list(DEV_CSRF_TRUSTED_ORIGINS)
@@ -84,6 +100,8 @@ class Settings(BaseSettings):
             )
         if self.storage_backend == "s3" and not self.s3_bucket:
             raise ValueError("S3_BUCKET é obrigatório quando STORAGE_BACKEND=s3")
+        if self.queue_backend == "sqs" and not self.sqs_queue_url:
+            raise ValueError("SQS_QUEUE_URL é obrigatório quando QUEUE_BACKEND=sqs")
         if len(self.csrf_secret) < MIN_CSRF_SECRET_LENGTH or self.csrf_secret == self.jwt_secret:
             raise ValueError(
                 "CSRF_SECRET deve ter ao menos 32 caracteres e ser diferente de JWT_SECRET"

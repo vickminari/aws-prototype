@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, pool
 
 import app.models  # noqa: F401  (registra as tabelas em Base.metadata)
 from app.core.config import get_settings
-from app.core.database import Base
+from app.core.database import Base, migration_lock
 
 config = context.config
 
@@ -35,9 +35,13 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Conecta no banco e aplica as migrações pendentes."""
+    """Conecta no banco e aplica as migrações pendentes.
+
+    Com várias instâncias do ASG subindo juntas, o `migration_lock` (pg_advisory_lock)
+    deixa só uma migrar por vez (ADR-027).
+    """
     connectable = create_engine(get_settings().database_url, poolclass=pool.NullPool)
-    with connectable.connect() as connection:
+    with connectable.connect() as connection, migration_lock(connection):
         # render_as_batch: permite ALTER TABLE também no SQLite (usado nos testes)
         context.configure(
             connection=connection, target_metadata=target_metadata, render_as_batch=True

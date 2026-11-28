@@ -11,10 +11,13 @@
 - `user_factory`: cria e persiste usuários com dados válidos e únicos.
 - `auth_user`: usuário criado e devolvido por `get_current_user` (sem login real); não
   combine com `logged_client`, pois o override substitui a autenticação real.
+- `media_factory`: cria arquivos de mídia (`MediaObject`) válidos, com dono e chave do
+  storage coerentes; aceita metadados, versões e tags como campos (sprint 2).
 """
 
 from collections.abc import Callable, Iterator
 from itertools import count
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -28,7 +31,7 @@ from app.core.database import Base
 from app.core.security import hash_password
 from app.dependencies import get_current_user, get_db
 from app.main import create_app
-from app.models import User
+from app.models import MediaObject, User
 
 DEFAULT_PASSWORD = "Senha-de-teste-123"
 # Origem padrão do TestClient; é a única origem confiável para CSRF nos testes.
@@ -140,3 +143,38 @@ def auth_user(app: FastAPI, user_factory: Callable[..., User]) -> User:
     user = user_factory()
     app.dependency_overrides[get_current_user] = lambda: user
     return user
+
+
+@pytest.fixture
+def media_factory(
+    db_session: Session, user_factory: Callable[..., User]
+) -> Callable[..., MediaObject]:
+    """Cria arquivos de mídia; qualquer coluna ou relacionamento pode ser sobrescrito.
+
+    Uso: `media_factory(owner, media_type="video", video=VideoMetadata(...))`. Sem `owner`,
+    cria um usuário novo. Por padrão grava e faz commit; com `persist=False` só devolve o
+    objeto, para o teste adicioná-lo e conferir o erro do commit.
+    """
+
+    def create(owner: User | None = None, *, persist: bool = True, **fields) -> MediaObject:
+        owner = owner or user_factory()
+        file_id = fields.pop("id", uuid4())
+        media_type = fields.get("media_type", "image")
+        data = {
+            "id": file_id,
+            "owner_id": owner.id,
+            "media_type": media_type,
+            "name": "praia.jpg",
+            "original_filename": "praia.jpg",
+            "extension": "jpg",
+            "mime_type": "image/jpeg",
+            "size_bytes": 2048,
+            "storage_key": f"users/{owner.id}/{media_type}s/{file_id}/original.jpg",
+        }
+        media = MediaObject(**(data | fields))
+        if persist:
+            db_session.add(media)
+            db_session.commit()
+        return media
+
+    return create

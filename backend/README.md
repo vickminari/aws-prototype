@@ -14,10 +14,11 @@ docker compose up --build
 ```
 
 - API: <http://localhost:8000/api/health> (`{"status": "ok", "db": "ok"}`; 503 se o banco não responder)
+- Health do ALB: <http://localhost:8000/api/health/live> (`{"status": "ok"}`, sem consultar o banco; ADR-027)
 - Swagger: <http://localhost:8000/api/docs>
 
 O código em `backend/app` é montado no container com `--reload`: salvar um arquivo reinicia a API.
-Ao subir, o container roda `alembic upgrade head` (ver [Migrações](#migrações-alembic)).
+Ao subir, o container roda `alembic upgrade head` (ver [Migrações](#migrações-alembic)), a menos que `RUN_MIGRATIONS=0` (o worker da sprint 2 usa 0).
 Variáveis opcionais vão em `backend/.env` (copie de `.env.example`); o `DATABASE_URL` do compose já aponta para o serviço `db`.
 Sem `.env`, a API sobe em `ENVIRONMENT=dev` e aceita escritas (CSRF) vindas do frontend local
 em `http://localhost:5173` e `http://127.0.0.1:5173`; defina `CSRF_TRUSTED_ORIGINS` para outras origens.
@@ -61,6 +62,7 @@ Os testes não precisam de PostgreSQL: usam SQLite em memória, recriado a cada 
 | `logged_user` / `logged_client` | login real (cookie HttpOnly) com CSRF renovado e vinculado ao `jti`; para testes de ponta a ponta |
 | `user_factory` | `user_factory(username="maria", password="Outra-123")` cria e salva um usuário; campos omitidos recebem valores válidos e únicos. Senha padrão: `DEFAULT_PASSWORD` |
 | `auth_user` | usuário criado e devolvido por `get_current_user` em todas as rotas (sem login); não combine com `logged_client` |
+| `media_factory` | `media_factory(owner, media_type="video", video=VideoMetadata(...))` cria e salva um `MediaObject` válido (sem `owner`, cria um usuário). Com `persist=False` só devolve o objeto |
 
 O app de teste confia somente na origem `http://testserver` (a do `TestClient`).
 Toda escrita exige CSRF: um POST/PUT/PATCH/DELETE com `client` recebe 403.
@@ -88,7 +90,7 @@ app/
 ├── schemas/   (VIEW)    # Pydantic: o que entra e o que sai da API
 ├── controllers/ (CONTROLLER) # routers finos: recebem dependências e chamam UM método de service
 ├── services/  (SERVICE) # regras de negócio; NÃO importam fastapi
-└── models/    (MODEL)   # entidades SQLAlchemy: User, RevokedToken
+└── models/    (MODEL)   # entidades SQLAlchemy: User, RevokedToken e, na sprint 2, media.py (arquivos, metadados, versões, tags)
 alembic/                 # env.py e versions/ (migrações); configuração em alembic.ini
 ```
 
@@ -107,6 +109,9 @@ Services lançam exceções de `app/core/exceptions.py`; o handler global em `ma
 | `InvalidImageError` | 422 |
 | `NotFoundError` | 404 |
 | `DatabaseUnavailableError` (health check) | 503 |
+| `QuotaExceededError` (cota de 100 MB) | 413 |
+| `FileTooLargeError`, `UnsupportedFileError` | 422 |
+| `UploadNotPendingError`, `UploadMissingError` | 409 |
 | outra subclasse de `DomainError` | 400 |
 | qualquer outra exceção | 500 `INTERNAL_ERROR` (mensagem real só no log) |
 
@@ -182,6 +187,23 @@ pytest tests/unit/test_user_schemas.py tests/unit/test_auth_service.py tests/int
   (`IntegrityError`); o service deve checar antes e lançar a exceção de domínio.
 - Modelo novo: importe-o em `app/models/__init__.py`, senão o Alembic não o enxerga.
 
+### Mídia e cota (sprint 2, #64)
+
+- `models/media.py`: `MediaObject` (um por arquivo enviado), `ImageMetadata`, `VideoMetadata` e
+  `AudioMetadata` (1:1, apagados junto com o arquivo), `MediaVariant` (versões de vídeo,
+  `UNIQUE(media_id, label)`), `Tag` (`UNIQUE(owner_id, name)`) e a tabela `media_tags`.
+  Tipos e status aceitos são conferidos por CHECK no banco. Detalhes na ARQ §5.4.
+- `users.storage_used_bytes`: cota usada, só com os originais (ADR-022). Quem altera é o
+  `services/quota_service.py`:
+  - `reserve(db, user_id, n, quota_bytes=...)`: um único `UPDATE ... WHERE storage_used_bytes + n <= quota`,
+    atômico também com uploads simultâneos; sem espaço, lança `QuotaExceededError` com os MB livres;
+  - `release(db, user_id, n)`: devolve bytes sem deixar o valor negativo;
+  - `usage(db, user_id, quota_bytes=...)`: uso atual.
+
+  As funções não fazem commit: quem chama confirma junto com o registro do arquivo.
+- Contratos da API em `schemas/file.py` (`UploadInit`, `UploadTicket`, `FileSummary`,
+  `FileDetail`, `FileUpdate`, `FilePage`, `StorageUsageRead`), usados pelas #69 e #70.
+
 ### Migrações (Alembic)
 
 Toda mudança de modelo gera uma migração (ARQ §5.9). Com o PostgreSQL do compose rodando:
@@ -195,7 +217,10 @@ alembic current                 # mostra a versão do banco
 ```
 
 Revise o arquivo gerado antes do commit: o autogenerate não detecta tudo (ex.: renomear coluna
-vira apagar + criar). O teste `tests/unit/test_migrations.py` aplica todas as migrações num
+vira apagar + criar). Na sprint 2 as migrações seguem o padrão *expand/contract* (ARQ §5.9):
+durante o deploy a versão antiga e a nova da API convivem, então nunca remova nem renomeie uma
+coluna que a versão anterior ainda usa. No PostgreSQL, o `alembic/env.py` pega um
+`pg_advisory_lock` antes de migrar: com várias instâncias subindo juntas, só uma migra por vez. O teste `tests/unit/test_migrations.py` aplica todas as migrações num
 SQLite e falha se o resultado divergir dos modelos, ou seja, se faltar uma migração.
 
 ## Como adicionar um endpoint (passo a passo)
@@ -365,4 +390,18 @@ Não há fallback automático para cookie sem `Secure` em produção.
 
 Ver [`.env.example`](.env.example) e ARQ §5.8. Em `ENVIRONMENT=prod` a API não sobe se
 `JWT_SECRET` tiver menos de 32 caracteres ou for o padrão de desenvolvimento, nem com
-`STORAGE_BACKEND=s3` sem `S3_BUCKET`.
+`STORAGE_BACKEND=s3` sem `S3_BUCKET`. Em qualquer ambiente, `QUEUE_BACKEND=sqs` exige `SQS_QUEUE_URL`.
+
+### Sprint 2 (#64)
+
+| Variável | Padrão | Uso |
+|---|---|---|
+| `USER_QUOTA_BYTES` | `104857600` | Cota por usuário (100 MB), só originais |
+| `MAX_UPLOAD_BYTES` | `104857600` | Limite por arquivo |
+| `UPLOAD_URL_EXPIRE_SECONDS` | `900` | Validade do POST pré-assinado |
+| `PENDING_UPLOAD_TTL_MINUTES` | `60` | Depois disso, upload não concluído é liberado |
+| `QUEUE_BACKEND` | `memory` | `memory` ou `sqs` (#71) |
+| `SQS_QUEUE_URL` / `AWS_ENDPOINT_URL` | vazias | Fila de processamento; endpoint só para o ElasticMQ do dev (#71) |
+| `RUN_MIGRATIONS` | `1` | `0` no worker: o `entrypoint.sh` pula o `alembic upgrade head` |
+| `DB_POOL_SIZE` / `DB_MAX_OVERFLOW` | `3` / `2` | Pool por processo no PostgreSQL; com várias instâncias a soma precisa caber no RDS |
+| `VIDEO_MAX_DURATION_SECONDS` | `600` | Vídeo mais longo falha com `VIDEO_TOO_LONG` (#73) |
