@@ -12,8 +12,10 @@ export AWS_DEFAULT_REGION="${AWS_REGION}"
 export AZ_A="${AZ_A:-${AWS_REGION}a}"
 export AZ_B="${AZ_B:-${AWS_REGION}b}"
 
-# Convenções de nomes e tags (ARQUITETURA.md §8.1).
-export PROJECT="proto1"
+# Convenções de nomes e tags (ARQUITETURA.md §8.1, ADR-019).
+# Os scripts da sprint 1 usam o padrão proto1; os da sprint 2 fazem
+# `export PROJECT=proto2` antes do `source 00_env.sh`.
+export PROJECT="${PROJECT:-proto1}"
 export OWNER="${OWNER:-}"
 
 # Endereçamento da VPC (ARQUITETURA.md §8.2).
