@@ -1618,7 +1618,7 @@ O ALB só aceita a CloudFront por duas barreiras: o SG (prefix list) e o header 
 | Política 1 | target tracking em `ASGAverageCPUUtilization` = **80%** |
 | Política 2 | target tracking em métrica customizada `CWAgent / mem_used_percent` (agregada por `AutoScalingGroupName`) = **80%** |
 | Warm-up | 300 s |
-| Ações agendadas (opcional, custo) | desejada 0 de madrugada e 1 de manhã nos dias sem uso (seção 13) |
+| Ações agendadas (**padrão da sprint**, ADR-032) | desejada 0 de madrugada e 1 de manhã, todos os dias; nos dias sem uso, fica em 0 (seção 13) |
 
 O gatilho de RAM exige o CloudWatch Agent: a AWS só mede CPU sem ele. A métrica é publicada com a dimensão `AutoScalingGroupName`, para a política enxergar a média do grupo.
 
@@ -1966,24 +1966,24 @@ O roteiro da apresentação e a tabela de contribuições ficam em [`apresentaca
 
 ## 13. Custos e cuidados com a conta
 
-A conta está no **plano gratuito da nova experiência**: créditos iniciais (US$ 100, segundo o anúncio da AWS) mais bônus por atividades concluídas no console. Na sprint 1 foram gastos menos de US$ 10; o saldo e a validade são conferidos no report 09 (#63). No plano gratuito não há cobrança enquanto houver créditos e a conta não for convertida para o plano pago (só o proprietário pode fazer isso). Se um dia a conta for para o plano pago, definir um **limite de gasto mensal** no projeto (ao atingi-lo, a AWS pausa o projeto em vez de cobrar mais).
+A conta está no **plano gratuito da nova experiência**: créditos iniciais (US$ 100, segundo o anúncio da AWS) mais bônus por atividades concluídas no console. Em 28/11/2026 restavam **US$ 148,55**, válidos até **04/05/2027**; a sprint 1 gastou US$ 11,13 em novembro (report 09, #63). No plano gratuito não há cobrança enquanto houver créditos e a conta não for convertida para o plano pago (só o proprietário pode fazer isso). Se um dia a conta for para o plano pago, definir um **limite de gasto mensal** no projeto (ao atingi-lo, a AWS pausa o projeto em vez de cobrar mais).
 
-**Estimativa para ~3 semanas (≈ 500 h) com os recursos da sprint 2** (preços de referência de `us-east-2`; conferir no report 09):
+**Estimativa para ~3 semanas (≈ 500 h) com os recursos da sprint 2** (preços de referência de `us-east-2`; detalhados no report 09):
 
 | Recurso | Custo aproximado | Cuidado |
 |---|---|---|
 | ALB `proto2-alb` | ~US$ 12 (hora + LCU) | Um ALB só (sem o LB2, ADR-021) |
 | IPv4 públicos (2 do ALB, 1 por instância, EIP até o cutover) | ~US$ 0,005/h cada → ~US$ 8–10 | Liberar o `proto1-eip` no cutover |
-| EC2 app `t3.small` *unlimited* (1–2 instâncias) | ~US$ 10–20 | Ações agendadas zerando o grupo de madrugada |
+| EC2 app `t3.small` *unlimited* (1–2 instâncias) | ~US$ 5–10 com escala agendada (~US$ 10–20 se 24/7) | Ações agendadas zerando o grupo de madrugada (ADR-032) |
 | EC2 workers `c7i-flex.large` (~30 h ligados) | ~US$ 3 | Mínimo 0; mínimo 1 só na demo e no teste de carga |
 | RDS `db.t4g.micro` (já existe) | ~US$ 8–10 | Parar quando não usar por dias (religa sozinho após 7 dias parado) |
 | EBS das instâncias, CloudWatch (métricas do CloudWatch Agent, alarmes, logs) | ~US$ 4 | Logs com retenção de 7 dias |
 | CloudFront, SQS, S3, GHCR | ~US$ 0–1 | Dentro das cotas gratuitas; GHCR gratuito para repositório público |
 | `proto1-app` parada até o teardown | ~US$ 2 (só o disco) | Encerrada no teardown (#26) |
 | **NAT Gateway / VPC endpoints de interface** | ~US$ 32/mês / ~US$ 7/mês cada | **Não criar** (ADR-026) |
-| **Total** | **~US$ 50–60** com tudo ligado 24/7; **~US$ 30–35** com escala agendada | Cabe no saldo de créditos |
+| **Total** | **~US$ 30–35 com escala agendada (padrão da sprint, ADR-032)**; ~US$ 50–60 se tudo ficasse ligado 24/7 | Cabe no saldo de créditos |
 
-- **AWS Budget `proto2-budget`** de US$ 40, com alertas por email em 50%, 80% e 100% (#63). O `proto1-budget` da sprint 1 continua até o teardown.
+- **AWS Budget `proto2-budget`** de US$ 40, com alertas por email em 50%, 80% e 100% (#63). Ele mede o consumo bruto (*Credits* e *Refunds* desmarcados): o `proto1-budget` da sprint 1, com as opções padrão, descontava os créditos e ficou sempre em US$ 0. O `proto1-budget` continua até o teardown.
 - Teste de carga curto e sem baixar vídeos (tráfego de saída).
 - Vídeos de teste curtos (a transcodificação é cobrada pelo tempo de instância).
 - Seguir a ordem de exclusão do report 08 (#26) **logo depois da nota**, conferindo o Budget 48 h depois.
@@ -2116,5 +2116,8 @@ Nota (sprint 2): encerrado para o código novo pelo ADR-030.
 
 **ADR-031 — Branch `dev` para integração e `main` para produção (issue #62)** | 2026-11-25 | Aceita (substitui, para a sprint 2, o GitHub Flow da seção 11)
 *Contexto:* na sprint 2 todo merge na `main` publica imagens no GHCR e pode ir para produção por instance refresh (ADR-025); com 30 issues integrando em paralelo, um merge quebrado afetaria a versão da apresentação. O professor sugeriu uma branch de desenvolvimento. *Decisão:* `dev` vira a branch padrão e recebe os PRs das issues com 1 aprovação; a `main` só recebe PRs `dev → main`, com 2 aprovações, que somadas ao autor formam a maioria da equipe (3 de 5); exigir os 4 travaria a publicação sempre que alguém estivesse indisponível. `dev` é a padrão para que `Closes #n` feche a issue no merge e os PRs já abram contra ela. As imagens são publicadas nos pushes das duas branches, e o ambiente único da AWS pode rodar commits da `dev` até o feature freeze para testes de integração; depois dele, só da `main` (seção 9.4). Um ambiente de homologação separado duplicaria ALB, ASG e CloudFront e não cabe no orçamento. *Consequências:* produção só muda quando alguém roda o deploy; o merge commit `dev → main` preserva a autoria (ADR-003); uma publicação na `main` depende de 2 aprovações além do autor, que já roda os testes e passa pelo CI; depois de implantar um commit da `dev` com migração, a `main` só volta ao ar após receber esse commit. Custo extra desprezível: o GHCR e o Actions são gratuitos para repositório público, e cada deploy só mantém uma instância a mais durante o refresh.
+
+**ADR-032 — Escala agendada como padrão de custo da sprint 2 (issue #63)** | 2026-11-28 | Aceita
+*Contexto:* o report 09 estimou ~US$ 50–60 para a sprint com tudo ligado 24/7 e ~US$ 30–35 com escala agendada; o `proto2-budget` é de US$ 40/mês; os créditos (US$ 148,55) cobririam os dois cenários, mas o Budget não. *Decisão:* o ASG do app (`proto2-asg-app`, #85) tem ações agendadas obrigatórias, com desejada 0 de madrugada e 1 de manhã, e fica em 0 nos dias sem uso; o ASG dos workers fica com mínimo 0 e só sobe para 1 na demo e no teste de carga. *Alternativas:* deixar tudo 24/7 (passaria do Budget e gastaria créditos à toa); ligar e desligar à mão (depende de alguém lembrar). *Consequências:* o custo previsto fica em ~US$ 30–35; quem for usar o app de madrugada sobe a desejada para 1 manualmente e devolve a 0 ao terminar.
 
 <!-- Novas decisões: adicionar abaixo, numeração sequencial -->
